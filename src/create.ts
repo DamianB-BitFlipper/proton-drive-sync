@@ -150,12 +150,14 @@ async function createDirectory(
  * Create a file or directory on Proton Drive.
  *
  * @param client - The Proton Drive client
- * @param localPath - The local path (e.g., "my_files/foo/bar.txt")
+ * @param localPath - The local file path to read from (e.g., "/Users/foo/my_files/bar.txt")
+ * @param remotePath - The remote path on Proton Drive (e.g., "backup/my_files/bar.txt")
  * @returns CreateResult with success status and node UID
  */
 export async function createNode(
     client: CreateProtonDriveClient,
-    localPath: string
+    localPath: string,
+    remotePath: string
 ): Promise<CreateResult> {
     // Check if path exists locally
     let pathStat: Stats | null = null;
@@ -166,18 +168,18 @@ export async function createNode(
         isDirectory = pathStat.isDirectory();
     } catch {
         // Path doesn't exist locally - treat as directory creation if ends with /
-        if (localPath.endsWith('/')) {
+        if (remotePath.endsWith('/')) {
             isDirectory = true;
         } else {
             return {
                 success: false,
-                error: `Path not found: ${localPath}. For creating a new directory, add a trailing slash.`,
+                error: `Local path not found: ${localPath}. For creating a new directory, add a trailing slash to remotePath.`,
                 isDirectory: false,
             };
         }
     }
 
-    const { parentParts, name } = parsePath(localPath);
+    const { parentParts, name } = parsePath(remotePath);
 
     // Get root folder
     const rootFolder = await client.getMyFilesRootFolder();

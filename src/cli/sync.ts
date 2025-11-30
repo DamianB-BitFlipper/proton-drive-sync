@@ -74,9 +74,11 @@ async function processChanges(): Promise<void> {
     pendingChanges.clear();
 
     for (const [path, change] of changes) {
-        // Use the directory name as the prefix for the remote path
+        // Build local path (where to read from)
+        const localPath = `${change.watchRoot}/${path}`;
+        // Build remote path (where to upload to on Proton Drive)
         const dirName = basename(change.watchRoot);
-        const fullPath = remoteRoot ? `${remoteRoot}/${dirName}/${path}` : `${dirName}/${path}`;
+        const remotePath = remoteRoot ? `${remoteRoot}/${dirName}/${path}` : `${dirName}/${path}`;
 
         try {
             if (change.exists) {
@@ -92,7 +94,7 @@ async function processChanges(): Promise<void> {
 
                 const result = await pRetry(
                     async () => {
-                        const res = await createNode(protonClient!, fullPath);
+                        const res = await createNode(protonClient!, localPath, remotePath);
                         if (!res.success) {
                             throw new Error(res.error);
                         }
@@ -102,7 +104,7 @@ async function processChanges(): Promise<void> {
                         retries: 3,
                         onFailedAttempt: (ctx) => {
                             logger.warn(
-                                `Create attempt ${ctx.attemptNumber} failed for ${path}: ${ctx.error.message}. ${ctx.retriesLeft} retries left.`
+                                `Create attempt ${ctx.attemptNumber} failed for ${remotePath}: ${ctx.error.message}. ${ctx.retriesLeft} retries left.`
                             );
                         },
                     }
@@ -119,7 +121,7 @@ async function processChanges(): Promise<void> {
 
                 const result = await pRetry(
                     async () => {
-                        const res = await deleteNode(protonClient!, fullPath, false);
+                        const res = await deleteNode(protonClient!, remotePath, false);
                         if (!res.success) {
                             throw new Error(res.error);
                         }
@@ -129,7 +131,7 @@ async function processChanges(): Promise<void> {
                         retries: 3,
                         onFailedAttempt: (ctx) => {
                             logger.warn(
-                                `Delete attempt ${ctx.attemptNumber} failed for ${path}: ${ctx.error.message}. ${ctx.retriesLeft} retries left.`
+                                `Delete attempt ${ctx.attemptNumber} failed for ${remotePath}: ${ctx.error.message}. ${ctx.retriesLeft} retries left.`
                             );
                         },
                     }
