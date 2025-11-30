@@ -5,6 +5,7 @@
 import { program } from 'commander';
 import { authCommand } from './cli/auth.js';
 import { configCommand } from './cli/config.js';
+import { resetCommand } from './cli/reset.js';
 import { syncCommand } from './cli/sync.js';
 
 program.name('proton-drive-sync').description('Sync local files to Proton Drive').version('1.0.0');
@@ -15,6 +16,8 @@ program
     .action(authCommand);
 
 program.command('config').description('Open config file in nano').action(configCommand);
+
+program.command('reset').description('Reset sync state').action(resetCommand);
 
 program
     .command('sync')
