@@ -17,13 +17,7 @@ import type {
     UploadController,
     CreateResult,
 } from './types.js';
-import {
-    parsePath,
-    findFileByName,
-    findFolderByName,
-    nodeStreamToWebStream,
-    formatSize,
-} from './utils.js';
+import { parsePath, findFileByName, findFolderByName, nodeStreamToWebStream } from './utils.js';
 
 // Re-export the client type for backwards compatibility
 export type { CreateProtonDriveClient, CreateResult } from './types.js';
@@ -50,7 +44,6 @@ async function ensureRemotePath(
     for (const folderName of pathParts) {
         if (needToCreate) {
             // Once we start creating, all subsequent folders need to be created
-            console.log(`  Creating folder: ${folderName}`);
             const result = await client.createFolder(currentFolderUid, folderName);
             if (!result.ok) {
                 throw new Error(`Failed to create folder "${folderName}": ${result.error}`);
@@ -61,11 +54,9 @@ async function ensureRemotePath(
             const existingFolderUid = await findFolderByName(client, currentFolderUid, folderName);
 
             if (existingFolderUid) {
-                console.log(`  Found existing folder: ${folderName}`);
                 currentFolderUid = existingFolderUid;
             } else {
                 // Folder doesn't exist, create it and all subsequent folders
-                console.log(`  Creating folder: ${folderName}`);
                 const result = await client.createFolder(currentFolderUid, folderName);
                 if (!result.ok) {
                     throw new Error(`Failed to create folder "${folderName}": ${result.error}`);
@@ -93,7 +84,6 @@ async function uploadFile(
     const fileSize = Number(fileStat.size);
 
     // Check if file already exists in the target folder
-    console.log(`Checking if "${fileName}" already exists...`);
     const existingFileUid = await findFileByName(client, targetFolderUid, fileName);
 
     const metadata: UploadMetadata = {
@@ -105,40 +95,27 @@ async function uploadFile(
     let uploadController: UploadController;
 
     if (existingFileUid) {
-        console.log(`File exists, uploading new revision...`);
-
         const revisionUploader = await client.getFileRevisionUploader(existingFileUid, metadata);
 
         const nodeStream = createReadStream(localFilePath);
         const webStream = nodeStreamToWebStream(nodeStream);
 
-        uploadController = await revisionUploader.writeStream(webStream, [], (uploadedBytes) => {
-            const percent = ((uploadedBytes / fileSize) * 100).toFixed(1);
-            process.stdout.write(
-                `\rUploading: ${formatSize(uploadedBytes)} / ${formatSize(fileSize)} (${percent}%)`
-            );
+        uploadController = await revisionUploader.writeStream(webStream, [], (_uploadedBytes) => {
+            // Progress callback - silent
         });
     } else {
-        console.log(`File doesn't exist, creating new file...`);
-
         const fileUploader = await client.getFileUploader(targetFolderUid, fileName, metadata);
 
         const nodeStream = createReadStream(localFilePath);
         const webStream = nodeStreamToWebStream(nodeStream);
 
-        uploadController = await fileUploader.writeStream(webStream, [], (uploadedBytes) => {
-            const percent = ((uploadedBytes / fileSize) * 100).toFixed(1);
-            process.stdout.write(
-                `\rUploading: ${formatSize(uploadedBytes)} / ${formatSize(fileSize)} (${percent}%)`
-            );
+        uploadController = await fileUploader.writeStream(webStream, [], (_uploadedBytes) => {
+            // Progress callback - silent
         });
     }
 
     // Wait for completion
     const nodeUid = await uploadController.completion();
-    console.log('\n');
-    console.log(`Upload complete!`);
-    console.log(`Node UID: ${nodeUid}`);
     return nodeUid;
 }
 
@@ -152,21 +129,15 @@ async function createDirectory(
     dirName: string
 ): Promise<string> {
     // Check if directory already exists
-    console.log(`Checking if "${dirName}" already exists...`);
     const existingFolderUid = await findFolderByName(client, targetFolderUid, dirName);
 
     if (existingFolderUid) {
-        console.log(`Directory already exists.`);
-        console.log(`Node UID: ${existingFolderUid}`);
         return existingFolderUid;
     } else {
-        console.log(`Creating directory: ${dirName}`);
         const result = await client.createFolder(targetFolderUid, dirName);
         if (!result.ok) {
             throw new Error(`Failed to create directory "${dirName}": ${result.error}`);
         }
-        console.log(`Directory created!`);
-        console.log(`Node UID: ${result.value!.uid}`);
         return result.value!.uid;
     }
 }
@@ -208,12 +179,6 @@ export async function createNode(
 
     const { parentParts, name } = parsePath(localPath);
 
-    if (isDirectory) {
-        console.log(`Creating directory: ${localPath}`);
-    } else {
-        console.log(`Uploading file: ${localPath} (${formatSize(pathStat!.size)})`);
-    }
-
     // Get root folder
     const rootFolder = await client.getMyFilesRootFolder();
 
@@ -231,7 +196,6 @@ export async function createNode(
     let targetFolderUid = rootFolderUid;
 
     if (parentParts.length > 0) {
-        console.log(`Ensuring parent path exists: ${parentParts.join('/')}`);
         targetFolderUid = await ensureRemotePath(client, rootFolderUid, parentParts);
     }
 

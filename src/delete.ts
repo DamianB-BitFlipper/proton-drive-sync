@@ -35,9 +35,6 @@ export async function deleteNode(
 ): Promise<DeleteOperationResult> {
     const { parentParts, name } = parsePath(remotePath);
 
-    console.log(`Deleting from remote: ${remotePath}`);
-    console.log(`  Mode: ${permanent ? 'permanent delete' : 'move to trash'}`);
-
     // Get root folder
     const rootFolder = await client.getMyFilesRootFolder();
 
@@ -55,11 +52,9 @@ export async function deleteNode(
     let targetFolderUid = rootFolderUid;
 
     if (parentParts.length > 0) {
-        console.log(`Traversing path: ${parentParts.join('/')}`);
         const traverseResult = await traverseRemotePath(client, rootFolderUid, parentParts);
 
         if (!traverseResult) {
-            console.log('Path does not exist on remote. Nothing to delete.');
             return { success: true, existed: false };
         }
 
@@ -67,34 +62,26 @@ export async function deleteNode(
     }
 
     // Find the target node
-    console.log(`Looking for "${name}"...`);
     const targetNode = await findNodeByName(client, targetFolderUid, name);
 
     if (!targetNode) {
-        console.log(`"${name}" does not exist on remote. Nothing to delete.`);
         return { success: true, existed: false };
     }
-
-    console.log(`Found ${targetNode.type}: ${name} (${targetNode.uid})`);
 
     // Delete or trash the node
     try {
         if (permanent) {
-            console.log(`Permanently deleting...`);
             for await (const result of client.deleteNodes([targetNode.uid])) {
                 if (!result.ok) {
                     throw new Error(`Failed to delete: ${result.error}`);
                 }
             }
-            console.log(`Permanently deleted!`);
         } else {
-            console.log(`Moving to trash...`);
             for await (const result of client.trashNodes([targetNode.uid])) {
                 if (!result.ok) {
                     throw new Error(`Failed to trash: ${result.error}`);
                 }
             }
-            console.log(`Moved to trash!`);
         }
 
         return {

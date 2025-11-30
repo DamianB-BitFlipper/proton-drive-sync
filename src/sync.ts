@@ -204,17 +204,22 @@ async function authenticate(): Promise<ProtonDriveClient> {
 
     // Load the SDK
     type SDKModule = typeof import('@protontech/drive-sdk');
-    let sdk: SDKModule;
-    try {
-        sdk = await import('@protontech/drive-sdk');
-    } catch {
-        throw new Error('Could not load @protontech/drive-sdk. Make sure the SDK is built.');
-    }
+    const sdk: SDKModule = await import('@protontech/drive-sdk');
+
+    // Import telemetry module for silent logging (not exported from main index)
+    const telemetryModule = await import('@protontech/drive-sdk/dist/telemetry.js');
 
     const httpClient = createProtonHttpClient(session!);
     const openPGPCryptoModule = createOpenPGPCrypto();
     const account = createProtonAccount(session!, openPGPCryptoModule);
     const srpModuleInstance = createSrpModule();
+
+    // Create a silent telemetry instance (only log errors)
+    const silentTelemetry = new telemetryModule.Telemetry({
+        logFilter: new telemetryModule.LogFilter({ globalLevel: telemetryModule.LogLevel.ERROR }),
+        logHandlers: [new telemetryModule.ConsoleLogHandler()],
+        metricHandlers: [], // No metrics logging
+    });
 
     const client = new sdk.ProtonDriveClient({
         httpClient,
@@ -225,6 +230,7 @@ async function authenticate(): Promise<ProtonDriveClient> {
         // @ts-expect-error - PrivateKey types differ between openpgp imports
         openPGPCryptoModule,
         srpModule: srpModuleInstance,
+        telemetry: silentTelemetry,
     });
 
     return client as unknown as ProtonDriveClient;
@@ -245,11 +251,6 @@ function setupWatchman(): void {
         const watchResp = resp as watchman.WatchProjectResponse;
         const root = watchResp.watch;
         const relative = watchResp.relative_path || '';
-
-        console.log(`Watching: ${root}`);
-        if (relative) {
-            console.log(`Relative path: ${relative}`);
-        }
 
         // Step 2: Get current clock to only subscribe to future changes
         watchmanClient.command(['clock', root], (err, clockResp) => {
@@ -280,8 +281,7 @@ function setupWatchman(): void {
                         console.error('Subscribe error:', err);
                         process.exit(1);
                     }
-                    console.log(`Subscribed to ${root}`);
-                    console.log('Waiting for file changes... (press Ctrl+C to exit)\n');
+                    console.log('Watching for file changes... (press Ctrl+C to exit)\n');
                 }
             );
         });
@@ -298,7 +298,7 @@ function setupWatchman(): void {
 
     // Step 6: Handle errors & shutdown
     watchmanClient.on('error', (e: Error) => console.error('Watchman error:', e));
-    watchmanClient.on('end', () => console.log('Watchman connection closed'));
+    watchmanClient.on('end', () => {});
 }
 
 // ============================================================================
@@ -309,7 +309,6 @@ async function main(): Promise<void> {
     try {
         // Authenticate first
         protonClient = await authenticate();
-        console.log('Proton Drive client ready.\n');
 
         // Then setup watchman
         setupWatchman();
