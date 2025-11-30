@@ -28,7 +28,7 @@ program
     .description('Sync changes to Proton Drive')
     .option('-v, --verbose', 'Enable verbose output to console')
     .option('-n, --dry-run', 'Show what would be synced without making changes')
-    .option('-d, --daemon', 'Keep running and watch for changes')
+    .option('-w, --watch', 'Keep running and watch for changes')
     .action(syncCommand);
 
 program.parse();

@@ -26,6 +26,7 @@ interface FileChange {
     exists: boolean;
     type: 'f' | 'd';
     watchRoot: string; // Which watch root this change came from
+    clock?: string; // The clock value to save after processing this change (daemon mode)
 }
 
 // ============================================================================
@@ -42,7 +43,7 @@ const DEBOUNCE_MS = 500;
 // ============================================================================
 
 let dryRun = false;
-let daemonMode = false;
+let watchMode = false;
 let remoteRoot = '';
 
 // ============================================================================
@@ -64,6 +65,16 @@ let isProcessing = false;
 // Track completion for one-shot mode
 let pendingQueries = 0;
 let oneShotResolve: (() => void) | null = null;
+
+/**
+ * Save clock for a change if in daemon mode and clock is present
+ */
+function saveClockIfNeeded(change: FileChange): void {
+    if (watchMode && change.clock && !dryRun) {
+        appState.clocks[change.watchRoot] = change.clock;
+        saveState(appState);
+    }
+}
 
 async function processChanges(): Promise<void> {
     if (isProcessing || !protonClient) return;
@@ -110,6 +121,7 @@ async function processChanges(): Promise<void> {
                     }
                 );
                 logger.info(`Success: ${path} -> ${result.nodeUid}`);
+                saveClockIfNeeded(change);
             } else {
                 // File or directory was deleted
                 if (dryRun) {
@@ -141,10 +153,12 @@ async function processChanges(): Promise<void> {
                 } else {
                     logger.info(`Already gone: ${path}`);
                 }
+                saveClockIfNeeded(change);
             }
         } catch (error) {
-            // All retries exhausted - log error and continue (clock will still advance)
+            // All retries exhausted - log error and continue, still save clock to avoid retrying forever
             logger.error(`Failed after 3 retries for ${path}: ${(error as Error).message}`);
+            saveClockIfNeeded(change);
         }
     }
 
@@ -153,7 +167,7 @@ async function processChanges(): Promise<void> {
     // If more changes came in while processing, schedule another run
     if (pendingChanges.size > 0) {
         scheduleProcessing();
-    } else if (!daemonMode && oneShotResolve) {
+    } else if (!watchMode && oneShotResolve) {
         // One-shot mode: resolve when all changes processed
         oneShotResolve();
     }
@@ -348,18 +362,14 @@ function setupWatchmanDaemon(config: Config): void {
         // Extract the watch root from the subscription name
         const dirName = resp.subscription.replace(`${SUB_NAME}-`, '');
         const watchRoot = config.sync_dirs.find((d) => basename(realpathSync(d)) === dirName) || '';
-
-        // Save the clock from this notification for resume capability (skip in dry-run mode)
-        const clock = (resp as unknown as { clock?: string }).clock;
         const resolvedRoot = realpathSync(watchRoot);
-        if (clock && !dryRun) {
-            appState.clocks[resolvedRoot] = clock;
-            saveState(appState);
-        }
+
+        // Get clock from this notification (will be saved after each file is processed)
+        const clock = (resp as unknown as { clock?: string }).clock;
 
         for (const file of resp.files) {
-            const fileChange = file as unknown as Omit<FileChange, 'watchRoot'>;
-            queueChange({ ...fileChange, watchRoot: realpathSync(watchRoot) });
+            const fileChange = file as unknown as Omit<FileChange, 'watchRoot' | 'clock'>;
+            queueChange({ ...fileChange, watchRoot: resolvedRoot, clock });
         }
     });
 
@@ -377,7 +387,7 @@ function setupWatchmanDaemon(config: Config): void {
 export async function syncCommand(options: {
     verbose: boolean;
     dryRun: boolean;
-    daemon: boolean;
+    watch: boolean;
 }): Promise<void> {
     if (options.verbose || options.dryRun) {
         enableVerbose();
@@ -388,7 +398,7 @@ export async function syncCommand(options: {
         logger.info('[DRY-RUN] Dry run mode enabled - no changes will be made');
     }
 
-    daemonMode = options.daemon;
+    watchMode = options.watch;
 
     // Load config
     const config = loadConfig();
@@ -399,7 +409,7 @@ export async function syncCommand(options: {
     // Authenticate using stored credentials
     protonClient = await authenticateFromKeychain();
 
-    if (daemonMode) {
+    if (watchMode) {
         // Daemon mode: use subscriptions and keep running
         setupWatchmanDaemon(config);
 
