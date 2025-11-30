@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@inquirer/prompts':
-        specifier: ^8.0.1
-        version: 8.0.1
       '@protontech/drive-sdk':
         specifier: link:../sdk/js/sdk
         version: link:../sdk/js/sdk

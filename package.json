@@ -4,6 +4,7 @@
   "description": "Examples for using the Proton Drive SDK",
   "type": "module",
   "scripts": {
+    "postinstall": "cd sdk/js/sdk && pnpm install && pnpm build",
     "list-files": "node list-files.js"
   },
   "keywords": [
@@ -15,7 +16,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.23.0",
   "dependencies": {
-    "@protontech/drive-sdk": "link:../sdk/js/sdk",
+    "@protontech/drive-sdk": "link:./sdk/js/sdk",
     "bcryptjs": "^3.0.3",
     "inquirer": "^13.0.1",
     "keytar": "^7.9.0",

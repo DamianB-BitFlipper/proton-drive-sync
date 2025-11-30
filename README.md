@@ -2,11 +2,14 @@
 
 A CLI tool to list files in your Proton Drive.
 
+## Requirements
+
+- [pnpm](https://pnpm.io/installation)
+
 ## Setup
 
 ```bash
 git submodule update --init --recursive
-cd sdk/js/sdk && pnpm install && pnpm build && cd ../../..
 pnpm install
 ```
 
