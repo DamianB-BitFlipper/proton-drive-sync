@@ -11,193 +11,26 @@
  */
 
 import { createReadStream, statSync, Stats } from 'fs';
-import { Readable } from 'stream';
-import { basename, dirname } from 'path';
+import type {
+    CreateProtonDriveClient,
+    UploadMetadata,
+    UploadController,
+    CreateResult,
+} from './types.js';
+import {
+    parsePath,
+    findFileByName,
+    findFolderByName,
+    nodeStreamToWebStream,
+    formatSize,
+} from './utils.js';
+
+// Re-export the client type for backwards compatibility
+export type { CreateProtonDriveClient, CreateResult } from './types.js';
 
 // ============================================================================
-// Types
+// Path Creation
 // ============================================================================
-
-interface NodeData {
-    name: string;
-    uid: string;
-    type: string;
-}
-
-interface NodeResult {
-    ok: boolean;
-    value?: NodeData;
-    error?: unknown;
-}
-
-interface RootFolderResult {
-    ok: boolean;
-    value?: { uid: string };
-    error?: unknown;
-}
-
-interface UploadController {
-    pause(): void;
-    resume(): void;
-    completion(): Promise<string>;
-}
-
-interface FileUploader {
-    getAvailableName(): Promise<string>;
-    writeStream(
-        stream: ReadableStream,
-        thumbnails: [],
-        onProgress?: (uploadedBytes: number) => void
-    ): Promise<UploadController>;
-}
-
-interface FileRevisionUploader {
-    writeStream(
-        stream: ReadableStream,
-        thumbnails: [],
-        onProgress?: (uploadedBytes: number) => void
-    ): Promise<UploadController>;
-}
-
-interface UploadMetadata {
-    mediaType: string;
-    expectedSize: number;
-    modificationTime?: Date;
-}
-
-interface CreateFolderResult {
-    ok: boolean;
-    value?: { uid: string };
-    error?: unknown;
-}
-
-export interface ProtonDriveClient {
-    iterateFolderChildren(folderUid: string): AsyncIterable<NodeResult>;
-    getMyFilesRootFolder(): Promise<RootFolderResult>;
-    createFolder(
-        parentNodeUid: string,
-        name: string,
-        modificationTime?: Date
-    ): Promise<CreateFolderResult>;
-    getFileUploader(
-        parentFolderUid: string,
-        name: string,
-        metadata: UploadMetadata,
-        signal?: AbortSignal
-    ): Promise<FileUploader>;
-    getFileRevisionUploader(
-        nodeUid: string,
-        metadata: UploadMetadata,
-        signal?: AbortSignal
-    ): Promise<FileRevisionUploader>;
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/**
- * Convert a Node.js Readable stream to a Web ReadableStream
- */
-function nodeStreamToWebStream(nodeStream: Readable): ReadableStream<Uint8Array> {
-    return new ReadableStream({
-        start(controller) {
-            nodeStream.on('data', (chunk: Buffer) => {
-                controller.enqueue(new Uint8Array(chunk));
-            });
-            nodeStream.on('end', () => {
-                controller.close();
-            });
-            nodeStream.on('error', (err) => {
-                controller.error(err);
-            });
-        },
-        cancel() {
-            nodeStream.destroy();
-        },
-    });
-}
-
-/**
- * Find an existing file by name in a folder.
- *
- * Note: We iterate through ALL children even after finding a match to ensure
- * the SDK's cache is marked as "children complete". See findFolderByName for details.
- */
-async function findFileByName(
-    client: ProtonDriveClient,
-    folderUid: string,
-    fileName: string
-): Promise<string | null> {
-    let foundUid: string | null = null;
-    for await (const node of client.iterateFolderChildren(folderUid)) {
-        if (!foundUid && node.ok && node.value?.name === fileName && node.value.type === 'file') {
-            foundUid = node.value.uid;
-        }
-    }
-    return foundUid;
-}
-
-/**
- * Find a folder by name in a parent folder.
- * Returns the folder UID if found, null otherwise.
- *
- * Note: We iterate through ALL children even after finding a match to ensure
- * the SDK's cache is marked as "children complete". The SDK only sets the
- * `isFolderChildrenLoaded` flag after full iteration. If we exit early, the
- * cache flag isn't set, and subsequent calls would hit the API again.
- */
-async function findFolderByName(
-    client: ProtonDriveClient,
-    parentFolderUid: string,
-    folderName: string
-): Promise<string | null> {
-    let foundUid: string | null = null;
-    for await (const node of client.iterateFolderChildren(parentFolderUid)) {
-        if (
-            !foundUid &&
-            node.ok &&
-            node.value?.type === 'folder' &&
-            node.value.name === folderName
-        ) {
-            foundUid = node.value.uid;
-        }
-    }
-    return foundUid;
-}
-
-/**
- * Parse a path and return its components.
- * Strips my_files/ prefix if present.
- * Returns { parentParts: string[], name: string }
- */
-function parsePath(localPath: string): { parentParts: string[]; name: string } {
-    let relativePath = localPath;
-
-    // Strip my_files/ prefix if present
-    if (relativePath.startsWith('my_files/')) {
-        relativePath = relativePath.slice('my_files/'.length);
-    } else if (relativePath.startsWith('./my_files/')) {
-        relativePath = relativePath.slice('./my_files/'.length);
-    }
-
-    // Remove trailing slash for directories
-    if (relativePath.endsWith('/')) {
-        relativePath = relativePath.slice(0, -1);
-    }
-
-    const name = basename(relativePath);
-    const dirPath = dirname(relativePath);
-
-    // If there's no directory (item is at root), return empty array
-    if (dirPath === '.' || dirPath === '') {
-        return { parentParts: [], name };
-    }
-
-    // Split by / to get folder components
-    const parentParts = dirPath.split('/').filter((part) => part.length > 0);
-    return { parentParts, name };
-}
 
 /**
  * Ensure all directories in the path exist, creating them if necessary.
@@ -207,7 +40,7 @@ function parsePath(localPath: string): { parentParts: string[]; name: string } {
  * Once we need to create a folder, all subsequent folders must be created (no more searching).
  */
 async function ensureRemotePath(
-    client: ProtonDriveClient,
+    client: CreateProtonDriveClient,
     rootFolderUid: string,
     pathParts: string[]
 ): Promise<string> {
@@ -246,23 +79,12 @@ async function ensureRemotePath(
     return currentFolderUid;
 }
 
-function formatSize(bytes: number): string {
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    let unitIndex = 0;
-    let size = bytes;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-        size /= 1024;
-        unitIndex++;
-    }
-    return `${size.toFixed(2)} ${units[unitIndex]}`;
-}
-
 // ============================================================================
 // File Upload
 // ============================================================================
 
 async function uploadFile(
-    client: ProtonDriveClient,
+    client: CreateProtonDriveClient,
     targetFolderUid: string,
     localFilePath: string,
     fileName: string,
@@ -325,7 +147,7 @@ async function uploadFile(
 // ============================================================================
 
 async function createDirectory(
-    client: ProtonDriveClient,
+    client: CreateProtonDriveClient,
     targetFolderUid: string,
     dirName: string
 ): Promise<string> {
@@ -353,13 +175,6 @@ async function createDirectory(
 // Public API
 // ============================================================================
 
-export interface CreateResult {
-    success: boolean;
-    nodeUid?: string;
-    error?: string;
-    isDirectory: boolean;
-}
-
 /**
  * Create a file or directory on Proton Drive.
  *
@@ -367,7 +182,10 @@ export interface CreateResult {
  * @param localPath - The local path (e.g., "my_files/foo/bar.txt")
  * @returns CreateResult with success status and node UID
  */
-export async function create(client: ProtonDriveClient, localPath: string): Promise<CreateResult> {
+export async function createNode(
+    client: CreateProtonDriveClient,
+    localPath: string
+): Promise<CreateResult> {
     // Check if path exists locally
     let pathStat: Stats | null = null;
     let isDirectory = false;

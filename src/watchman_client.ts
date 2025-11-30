@@ -24,19 +24,13 @@ import {
     initCrypto,
 } from './auth.js';
 import { getStoredCredentials, storeCredentials, deleteStoredCredentials } from './keychain.js';
-import { create, ProtonDriveClient as CreateClient } from './create.js';
-import { deleteNode, ProtonDriveClient as DeleteClient } from './delete.js';
+import type { ProtonDriveClient, ApiError } from './types.js';
+import { createNode } from './create.js';
+import { deleteNode } from './delete.js';
 
 // ============================================================================
 // Types
 // ============================================================================
-
-type ProtonDriveClient = CreateClient & DeleteClient;
-
-interface ApiError extends Error {
-    requires2FA?: boolean;
-    code?: number;
-}
 
 interface FileChange {
     name: string;
@@ -89,7 +83,7 @@ async function processChanges(): Promise<void> {
                 const typeLabel = change.type === 'd' ? 'directory' : 'file';
                 console.log(`\n[SYNC] Creating/updating ${typeLabel}: ${path}`);
 
-                const result = await create(protonClient, fullPath);
+                const result = await createNode(protonClient, fullPath);
                 if (result.success) {
                     console.log(`[SYNC] Success: ${path} -> ${result.nodeUid}`);
                 } else {
