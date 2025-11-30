@@ -2,7 +2,7 @@
  * Logs command to view proton-drive-sync logs
  */
 
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { spawn } from 'child_process';
 import { join } from 'path';
 import { xdgState } from 'xdg-basedir';
@@ -53,4 +53,14 @@ export function logsCommand(options: LogsOptions): void {
         // Print the logs
         console.log(content);
     }
+}
+
+export function logsClearCommand(): void {
+    if (!existsSync(LOG_PATH)) {
+        console.log('No log file to clear.');
+        return;
+    }
+
+    unlinkSync(LOG_PATH);
+    console.log('Logs cleared.');
 }

@@ -5,7 +5,7 @@
 import { program } from 'commander';
 import { authCommand } from './cli/auth.js';
 import { configCommand } from './cli/config.js';
-import { logsCommand } from './cli/logs.js';
+import { logsCommand, logsClearCommand } from './cli/logs.js';
 import { resetCommand } from './cli/reset.js';
 import {
     serviceInstallCommand,
@@ -39,11 +39,11 @@ program
     .option('-w, --watch', 'Keep running and watch for changes')
     .action(syncCommand);
 
-program
-    .command('logs')
-    .description('View service logs')
-    .option('-f, --follow', 'Follow logs in real-time')
-    .action(logsCommand);
+const logsCmd = program.command('logs').description('View service logs');
+
+logsCmd.option('-f, --follow', 'Follow logs in real-time').action(logsCommand);
+
+logsCmd.command('clear').description('Clear log file').action(logsClearCommand);
 
 const serviceCommand = program
     .command('service')
