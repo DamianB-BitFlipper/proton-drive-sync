@@ -26,12 +26,11 @@ interface FileChange {
   exists: boolean;
   type: 'f' | 'd';
   watchRoot: string; // Which watch root this change came from
-  clock?: string; // The clock value to save after processing this change (daemon mode)
 }
 
 interface WatchmanQueryResponse {
   clock: string;
-  files: Omit<FileChange, 'watchRoot' | 'clock'>[];
+  files: Omit<FileChange, 'watchRoot'>[];
 }
 
 // ============================================================================
@@ -40,8 +39,8 @@ interface WatchmanQueryResponse {
 
 const SUB_NAME = 'proton-drive-sync';
 
-// Debounce time in ms - wait for rapid changes to settle
-const DEBOUNCE_MS = 500;
+// Polling interval for processing jobs in watch mode (10 seconds)
+const JOB_POLL_INTERVAL_MS = 10_000;
 
 // ============================================================================
 // Options & State
@@ -50,12 +49,7 @@ const DEBOUNCE_MS = 500;
 let dryRun = false;
 let watchMode = false;
 let remoteRoot = '';
-
-// Queue of pending changes (path -> latest change info)
-const pendingChanges = new Map<string, FileChange>();
-let debounceTimer: NodeJS.Timeout | null = null;
 let protonClient: ProtonDriveClient | null = null;
-let isProcessing = false;
 
 // ============================================================================
 // Watchman Client
@@ -82,92 +76,48 @@ async function waitForWatchman(maxAttempts = 30, delayMs = 1000): Promise<void> 
 }
 
 // ============================================================================
-// Change Queue & Processing
+// Change Queue
 // ============================================================================
 
-async function processChanges(): Promise<void> {
-  if (isProcessing || !protonClient) return;
-  isProcessing = true;
-
-  // Take snapshot of current pending changes
-  const changes = new Map(pendingChanges);
-  pendingChanges.clear();
-
-  // Process all changes
-  for (const [path, change] of changes) {
-    // Build local path (where to read from)
-    const localPath = `${change.watchRoot}/${path}`;
-    // Build remote path (where to upload to on Proton Drive)
-    const dirName = basename(change.watchRoot);
-    const remotePath = remoteRoot ? `${remoteRoot}/${dirName}/${path}` : `${dirName}/${path}`;
-
-    // Determine event type
-    let eventType: SyncEventType;
-    if (!change.exists) {
-      eventType = SyncEventType.DELETE;
-    } else if (change.type === 'd') {
-      eventType = SyncEventType.CREATE;
-    } else {
-      // For files, we treat both create and modify as UPDATE
-      // (createNode handles both cases)
-      eventType = SyncEventType.UPDATE;
-    }
-
-    const typeLabel = change.type === 'd' ? 'directory' : 'file';
-
-    logger.debug(`Enqueueing ${eventType} job for ${typeLabel}: ${path}`);
-
-    enqueueJob(
-      {
-        eventType,
-        localPath,
-        remotePath,
-      },
-      dryRun
-    );
-  }
-
-  // Process all pending jobs from the queue
-  const processed = await processAllPendingJobs(protonClient, dryRun);
-  if (processed > 0) {
-    logger.info(`Processed ${processed} sync job(s)`);
-  }
-
-  isProcessing = false;
-
-  // If more changes came in while processing, schedule another run
-  if (pendingChanges.size > 0) {
-    scheduleProcessing();
-  }
-}
-
 /**
- * Debounce file change processing.
- *
- * When multiple file changes arrive in quick succession (e.g., editor saving
- * multiple files, or a bulk copy operation), this ensures we only process
- * once after the activity settles. Each call resets the timer, so
- * processChanges() only fires after DEBOUNCE_MS of inactivity.
+ * Queue a file change as a sync job.
+ * Converts the file change into a job with proper paths and event type.
  */
-function scheduleProcessing(): void {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
-  }
-  debounceTimer = setTimeout(() => {
-    debounceTimer = null;
-    processChanges();
-  }, DEBOUNCE_MS);
-}
-
-function queueChange(file: FileChange, schedule: boolean): void {
+function queueChange(file: FileChange): void {
   const status = file.exists ? (file.type === 'd' ? 'dir changed' : 'changed') : 'deleted';
   const typeLabel = file.type === 'd' ? 'dir' : 'file';
   logger.debug(`[${status}] ${file.name} (size: ${file.size ?? 0}, type: ${typeLabel})`);
 
-  pendingChanges.set(file.name, file);
-  if (schedule) {
-    scheduleProcessing();
+  // Build local path (where to read from)
+  const localPath = `${file.watchRoot}/${file.name}`;
+  // Build remote path (where to upload to on Proton Drive)
+  const dirName = basename(file.watchRoot);
+  const remotePath = remoteRoot
+    ? `${remoteRoot}/${dirName}/${file.name}`
+    : `${dirName}/${file.name}`;
+
+  // Determine event type
+  let eventType: SyncEventType;
+  if (!file.exists) {
+    eventType = SyncEventType.DELETE;
+  } else if (file.type === 'd') {
+    eventType = SyncEventType.CREATE;
+  } else {
+    // For files, we treat both create and modify as UPDATE
+    // (createNode handles both cases)
+    eventType = SyncEventType.UPDATE;
   }
+
+  logger.debug(`Enqueueing ${eventType} job for ${typeLabel}: ${file.name}`);
+
+  enqueueJob(
+    {
+      eventType,
+      localPath,
+      remotePath,
+    },
+    dryRun
+  );
 }
 
 // ============================================================================
@@ -243,6 +193,8 @@ function buildWatchmanQuery(savedClock: string | null, relative: string): Record
  * Uses Promise.all to query all directories concurrently, then processes changes.
  */
 async function runOneShotSync(config: Config): Promise<void> {
+  let jobsQueued = 0;
+
   // Query all directories concurrently
   await Promise.all(
     config.sync_dirs.map(async (dir) => {
@@ -270,22 +222,26 @@ async function runOneShotSync(config: Config): Promise<void> {
         setClock(watchDir, resp.clock, dryRun);
       }
 
-      // Queue changes (don't schedule processing - we'll call processChanges directly after)
+      // Queue changes as jobs
       const files = resp.files || [];
       for (const file of files) {
         const fileChange = file as Omit<FileChange, 'watchRoot'>;
-        queueChange({ ...fileChange, watchRoot: watchDir }, false);
+        queueChange({ ...fileChange, watchRoot: watchDir });
+        jobsQueued++;
       }
     })
   );
 
-  // Process all queued changes
-  if (pendingChanges.size === 0) {
+  // Process all queued jobs
+  if (jobsQueued === 0) {
     logger.info('No changes to sync.');
     return;
   }
 
-  await processChanges();
+  const processed = await processAllPendingJobs(protonClient!, dryRun);
+  if (processed > 0) {
+    logger.info(`Processed ${processed} sync job(s)`);
+  }
 }
 
 // ============================================================================
@@ -338,12 +294,9 @@ async function setupWatchmanDaemon(config: Config): Promise<void> {
 
     const resolvedRoot = realpathSync(watchRoot);
 
-    // Get clock from this notification (will be saved after each file is processed)
-    const clock = (resp as unknown as { clock?: string }).clock;
-
     for (const file of resp.files) {
-      const fileChange = file as unknown as Omit<FileChange, 'watchRoot' | 'clock'>;
-      queueChange({ ...fileChange, watchRoot: resolvedRoot, clock }, true);
+      const fileChange = file as unknown as Omit<FileChange, 'watchRoot'>;
+      queueChange({ ...fileChange, watchRoot: resolvedRoot });
     }
   });
 
@@ -352,6 +305,20 @@ async function setupWatchmanDaemon(config: Config): Promise<void> {
   watchmanClient.on('end', () => {});
 
   logger.info('Watching for file changes... (press Ctrl+C to exit)');
+}
+
+/**
+ * Start a polling service that processes queued jobs every JOB_POLL_INTERVAL_MS.
+ * Returns the interval ID so it can be cleared on shutdown.
+ */
+function startJobProcessor(): NodeJS.Timeout {
+  return setInterval(async () => {
+    if (!protonClient) return;
+    const processed = await processAllPendingJobs(protonClient, dryRun);
+    if (processed > 0) {
+      logger.info(`Processed ${processed} sync job(s)`);
+    }
+  }, JOB_POLL_INTERVAL_MS);
 }
 
 // ============================================================================
@@ -403,7 +370,10 @@ export async function startCommand(options: {
 
   if (watchMode) {
     // Watch mode: use subscriptions and keep running
-    setupWatchmanDaemon(config);
+    await setupWatchmanDaemon(config);
+
+    // Start job processor (polls every 10 seconds)
+    const jobProcessor = startJobProcessor();
 
     // Check for stop signal every second
     const stopSignalCheck = setInterval(() => {
@@ -411,6 +381,7 @@ export async function startCommand(options: {
         consumeSignal('stop');
         logger.info('Stop signal received. Shutting down...');
         clearInterval(stopSignalCheck);
+        clearInterval(jobProcessor);
         watchmanClient.end();
         process.exit(0);
       }
@@ -419,6 +390,7 @@ export async function startCommand(options: {
     // Handle graceful shutdown
     process.on('SIGINT', () => {
       clearInterval(stopSignalCheck);
+      clearInterval(jobProcessor);
       logger.info('Shutting down...');
       watchmanClient.end();
       process.exit(0);

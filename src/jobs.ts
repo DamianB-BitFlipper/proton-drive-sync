@@ -16,9 +16,25 @@ import type { ProtonDriveClient } from './types.js';
 // Constants
 // ============================================================================
 
-const MAX_RETRIES = 10;
-const BASE_RETRY_DELAY_MS = 1000; // 1 second
-const MAX_RETRY_DELAY_MS = 5 * 60 * 1000; // 5 minutes
+// Retry delays in seconds (×4 exponential backoff, capped at ~1 week)
+const RETRY_DELAYS_SEC = [
+  1,
+  4,
+  16,
+  64,
+  256, // ~4 minutes
+  1024, // ~17 minutes
+  4096, // ~1 hour
+  16384, // ~4.5 hours
+  65536, // ~18 hours
+  262144, // ~3 days
+  604800, // ~1 week (cap)
+];
+
+const MAX_RETRIES = RETRY_DELAYS_SEC.length;
+
+// Jitter as percentage of retry delay (0.25 = 25%)
+const JITTER_FACTOR = 0.25;
 
 // ============================================================================
 // Job Queue Functions
@@ -92,35 +108,75 @@ export function markJobBlocked(jobId: number, error: string, dryRun: boolean): v
     .run();
 }
 
+// Index in RETRY_DELAYS_SEC for 256s (~4 min) - network errors cap here
+const NETWORK_RETRY_CAP_INDEX = 4;
+
+/** Check if an error message indicates a network error */
+function isNetworkError(error: string): boolean {
+  const networkPatterns = [
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'ENETUNREACH',
+    'EHOSTUNREACH',
+    'socket hang up',
+    'network',
+    'timeout',
+    'connection',
+  ];
+  const lowerError = error.toLowerCase();
+  return networkPatterns.some((pattern) => lowerError.includes(pattern.toLowerCase()));
+}
+
 /**
  * Schedule a job for retry with exponential backoff and jitter.
+ * Network errors are retried indefinitely at max ~4 min intervals.
  * No-op if dryRun is true.
  */
 export function scheduleRetry(
   jobId: number,
   nRetries: number,
   error: string,
+  isNetworkError: boolean,
   dryRun: boolean
 ): void {
   if (dryRun) return;
-  // Exponential backoff with jitter
-  const baseDelay = Math.min(BASE_RETRY_DELAY_MS * Math.pow(2, nRetries), MAX_RETRY_DELAY_MS);
-  const jitter = Math.random() * baseDelay * 0.5; // 0-50% jitter
-  const delay = baseDelay + jitter;
-  const retryAt = new Date(Date.now() + delay);
+
+  // For network errors, cap delay at 256s (~4 min) and don't increment retries beyond that
+  const effectiveRetries = isNetworkError ? Math.min(nRetries, NETWORK_RETRY_CAP_INDEX) : nRetries;
+
+  // Get delay from array (use last value if beyond array length)
+  const delayIndex = Math.min(effectiveRetries, RETRY_DELAYS_SEC.length - 1);
+  const baseDelaySec = RETRY_DELAYS_SEC[delayIndex];
+
+  // Add jitter (±JITTER_FACTOR of base delay)
+  const jitterSec = baseDelaySec * JITTER_FACTOR * (Math.random() * 2 - 1);
+  const delaySec = Math.max(1, baseDelaySec + jitterSec);
+  const retryAt = new Date(Date.now() + delaySec * 1000);
+
+  // For network errors, don't increment nRetries beyond the cap (retry indefinitely)
+  const newRetries = isNetworkError
+    ? Math.min(nRetries + 1, NETWORK_RETRY_CAP_INDEX + 1)
+    : nRetries + 1;
 
   db.update(schema.syncJobs)
     .set({
-      nRetries: nRetries + 1,
+      nRetries: newRetries,
       retryAt,
       lastError: error,
     })
     .where(eq(schema.syncJobs.id, jobId))
     .run();
 
-  logger.info(
-    `Job ${jobId} scheduled for retry in ${Math.round(delay / 1000)}s (attempt ${nRetries + 1})`
-  );
+  if (isNetworkError) {
+    logger.info(`Job ${jobId} (network error) scheduled for retry in ${Math.round(delaySec)}s`);
+  } else {
+    logger.info(
+      `Job ${jobId} scheduled for retry in ${Math.round(delaySec)}s (attempt ${newRetries}/${MAX_RETRIES})`
+    );
+  }
 }
 
 /**
@@ -167,12 +223,13 @@ export async function processNextJob(client: ProtonDriveClient, dryRun: boolean)
     return true;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const networkError = isNetworkError(errorMessage);
 
-    if (nRetries >= MAX_RETRIES) {
+    if (!networkError && nRetries >= MAX_RETRIES) {
       logger.error(`Job ${id} failed permanently after ${MAX_RETRIES} retries: ${errorMessage}`);
       markJobBlocked(id, errorMessage, dryRun);
     } else {
-      scheduleRetry(id, nRetries, errorMessage, dryRun);
+      scheduleRetry(id, nRetries, errorMessage, networkError, dryRun);
     }
 
     return true;
