@@ -11,7 +11,7 @@
  */
 
 import type { DeleteProtonDriveClient, DeleteOperationResult } from './types.js';
-import { parsePath, findNodeByName, traverseRemotePath } from './utils.js';
+import { parsePath, findNodeByName, traverseRemotePath } from './api_helpers.js';
 
 // Re-export the client type for backwards compatibility
 export type { DeleteProtonDriveClient, DeleteOperationResult } from './types.js';

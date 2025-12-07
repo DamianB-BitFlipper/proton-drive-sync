@@ -7,10 +7,10 @@
 import { eq, and, lte, notInArray, inArray } from 'drizzle-orm';
 import { db, schema } from './db/index.js';
 import { SyncJobStatus, SyncEventType } from './db/schema.js';
-import { createNode } from './create.js';
-import { deleteNode } from './delete.js';
+import { createNode } from './api/create.js';
+import { deleteNode } from './api/delete.js';
 import { logger, isDebugEnabled } from './logger.js';
-import type { ProtonDriveClient } from './types.js';
+import type { ProtonDriveClient } from './api/types.js';
 
 // ============================================================================
 // Constants

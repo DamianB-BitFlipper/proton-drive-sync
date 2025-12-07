@@ -12,7 +12,7 @@ import {
   initCrypto,
 } from '../auth.js';
 import { storeCredentials, deleteStoredCredentials, getStoredCredentials } from '../keychain.js';
-import type { ProtonDriveClient, ApiError } from '../types.js';
+import type { ProtonDriveClient, ApiError } from '../api/types.js';
 import { logger } from '../logger.js';
 
 /**

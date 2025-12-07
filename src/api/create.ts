@@ -17,7 +17,12 @@ import type {
   UploadController,
   CreateResult,
 } from './types.js';
-import { parsePath, findFileByName, findFolderByName, nodeStreamToWebStream } from './utils.js';
+import {
+  parsePath,
+  findFileByName,
+  findFolderByName,
+  nodeStreamToWebStream,
+} from './api_helpers.js';
 
 // Re-export the client type for backwards compatibility
 export type { CreateProtonDriveClient, CreateResult } from './types.js';

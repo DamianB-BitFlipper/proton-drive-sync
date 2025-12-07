@@ -13,7 +13,7 @@ import { authenticateFromKeychain } from './auth.js';
 import { hasSignal, consumeSignal, isAlreadyRunning } from '../signals.js';
 import { enqueueJob, processAllPendingJobs } from '../jobs.js';
 import { SyncEventType } from '../db/schema.js';
-import type { ProtonDriveClient } from '../types.js';
+import type { ProtonDriveClient } from '../api/types.js';
 
 // ============================================================================
 // Types
