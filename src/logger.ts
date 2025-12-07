@@ -1,51 +1,43 @@
 /**
  * Proton Drive Sync - Logger
  *
- * Logs to file by default, and to console if verbose mode is enabled.
+ * Logs to both file and console by default.
+ * In daemon mode, console logging is disabled.
  */
 
-import { existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
 import winston from 'winston';
-import { xdgState } from 'xdg-basedir';
+import { STATE_DIR } from './db/index.js';
 
-// Define state directory here to avoid circular dependency with state.ts
-const STATE_DIR = join(xdgState!, 'proton-drive-sync');
+const LOG_FILE = `${STATE_DIR}/sync.log`;
 
-// Ensure state directory exists for log file
-if (!existsSync(STATE_DIR)) {
-  mkdirSync(STATE_DIR, { recursive: true });
-}
-
-const LOG_FILE = join(STATE_DIR, 'sync.log');
-
-// Create base transports (always log to file)
-const transports: winston.transport[] = [
-  new winston.transports.File({
-    filename: LOG_FILE,
-    format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
-  }),
-];
-
-// Create the logger
 export const logger = winston.createLogger({
   level: 'info',
-  transports,
-});
-
-/**
- * Enable verbose mode (also log to console)
- */
-export function enableVerbose(): void {
-  logger.add(
+  format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
+  transports: [
+    new winston.transports.File({ filename: LOG_FILE }),
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.colorize(),
-        winston.format.timestamp({ format: 'HH:mm:ss' }),
-        winston.format.printf(({ timestamp, level, message }) => {
-          return `${timestamp} ${level}: ${message}`;
-        })
+        winston.format.printf(({ level, message }) => `${level}: ${message}`)
       ),
-    })
-  );
+    }),
+  ],
+});
+
+/**
+ * Disable console logging (for daemon mode - background process)
+ */
+export function disableConsoleLogging(): void {
+  logger.transports.forEach((transport) => {
+    if (transport instanceof winston.transports.Console) {
+      transport.silent = true;
+    }
+  });
+}
+
+/**
+ * Enable debug level logging
+ */
+export function enableDebug(): void {
+  logger.level = 'debug';
 }

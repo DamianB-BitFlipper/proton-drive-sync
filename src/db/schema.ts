@@ -4,7 +4,7 @@
  * Drizzle ORM schema for SQLite state storage.
  */
 
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 // ============================================================================
 // Enums
@@ -12,6 +12,7 @@ import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 
 export const SyncJobStatus = {
   PENDING: 'PENDING',
+  PROCESSING: 'PROCESSING',
   SYNCED: 'SYNCED',
   BLOCKED: 'BLOCKED',
 } as const;
@@ -69,5 +70,19 @@ export const syncJobs = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date()),
   },
-  (table) => [index('idx_sync_jobs_status_retry').on(table.status, table.retryAt)]
+  (table) => [
+    index('idx_sync_jobs_status_retry').on(table.status, table.retryAt),
+    uniqueIndex('idx_sync_jobs_local_path').on(table.localPath),
+  ]
 );
+
+/**
+ * Processing queue table for tracking jobs currently being processed.
+ * Separate from sync_jobs to prevent race conditions when new updates arrive during processing.
+ */
+export const processingQueue = sqliteTable('processing_queue', {
+  localPath: text('local_path').primaryKey(),
+  startedAt: integer('started_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});

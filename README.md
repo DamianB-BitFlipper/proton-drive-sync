@@ -42,8 +42,8 @@ This opens the config file at `~/.config/proton-drive-sync/config.json`:
 
 ```json
 {
-    "sync_dirs": ["/path/to/first/directory", "/path/to/second/directory"],
-    "remote_root": "backups"
+  "sync_dirs": ["/path/to/first/directory", "/path/to/second/directory"],
+  "remote_root": "backups"
 }
 ```
 
@@ -83,21 +83,32 @@ proton-drive-sync service uninstall
 ```bash
 git clone https://github.com/damianb-bitflipper/proton-drive-sync
 cd proton-drive-sync
-pnpm install
+make install
 pnpm link --global
 ```
 
-Run directly with `pnpm tsx` (no build step required):
+### Make Commands
+
+| Command           | Description                               |
+| ----------------- | ----------------------------------------- |
+| `make install`    | Install dependencies                      |
+| `make build`      | Build the project                         |
+| `make dev ARGS=…` | Run directly with tsx (no build required) |
+| `make pre-commit` | Run lint and format on all files          |
+| `make publish`    | Build and publish to npm                  |
+| `make clean`      | Remove build artifacts                    |
+
+Run directly with tsx (no build step required):
 
 ```bash
-pnpm tsx src/index.ts sync
+make dev ARGS="start"
 ```
 
 Or rebuild after changes:
 
 ```bash
-pnpm build
-proton-drive-sync sync
+make build
+proton-drive-sync start
 ```
 
 ## Publishing

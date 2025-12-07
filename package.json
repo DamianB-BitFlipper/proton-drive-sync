@@ -1,69 +1,69 @@
 {
-    "name": "proton-drive-sync",
-    "version": "0.1.0",
-    "description": "Sync local files to Proton Drive",
-    "type": "module",
-    "bin": {
-        "proton-drive-sync": "./dist/index.js"
-    },
-    "scripts": {
-        "preinstall": "which watchman || (echo 'Error: Watchman is required. Install from: https://facebook.github.io/watchman/docs/install' && exit 1)",
-        "build": "tsc && cp -r src/db/migrations dist/db/",
-        "build:check": "tsc --noEmit",
-        "prepare": "husky"
-    },
-    "keywords": [
-        "proton",
-        "drive",
-        "sync"
+  "name": "proton-drive-sync",
+  "version": "0.1.0",
+  "description": "Sync local files to Proton Drive",
+  "type": "module",
+  "bin": {
+    "proton-drive-sync": "./dist/index.js"
+  },
+  "scripts": {
+    "preinstall": "which watchman || (echo 'Error: Watchman is required. Install from: https://facebook.github.io/watchman/docs/install' && exit 1)",
+    "build": "tsc && cp -r src/db/migrations dist/db/",
+    "build:check": "tsc --noEmit",
+    "prepare": "husky"
+  },
+  "keywords": [
+    "proton",
+    "drive",
+    "sync"
+  ],
+  "author": "damianb-bitflipper",
+  "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/damianb-bitflipper/proton-drive-sync"
+  },
+  "files": [
+    "dist"
+  ],
+  "packageManager": "pnpm@10.24.0",
+  "dependencies": {
+    "@inquirer/prompts": "^8.0.1",
+    "@protontech/drive-sdk": "^0.7.0",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.5.0",
+    "commander": "^14.0.2",
+    "drizzle-orm": "^0.45.0",
+    "fb-watchman": "^2.0.2",
+    "keychain": "^1.5.0",
+    "openpgp": "^6.2.2",
+    "p-retry": "^7.1.0",
+    "winston": "^3.18.3",
+    "xdg-basedir": "^5.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/fb-watchman": "^2.0.6",
+    "@types/node": "^24.10.1",
+    "drizzle-kit": "^0.31.8",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.7.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.48.0"
+  },
+  "lint-staged": {
+    "*.{ts,js}": [
+      "eslint --fix",
+      "prettier --write"
     ],
-    "author": "damianb-bitflipper",
-    "license": "GPL-3.0",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/damianb-bitflipper/proton-drive-sync"
-    },
-    "files": [
-        "dist"
-    ],
-    "packageManager": "pnpm@10.24.0",
-    "dependencies": {
-        "@inquirer/prompts": "^8.0.1",
-        "@protontech/drive-sdk": "^0.7.0",
-        "bcryptjs": "^3.0.3",
-        "better-sqlite3": "^12.5.0",
-        "commander": "^14.0.2",
-        "drizzle-orm": "^0.45.0",
-        "fb-watchman": "^2.0.2",
-        "keychain": "^1.5.0",
-        "openpgp": "^6.2.2",
-        "p-retry": "^7.1.0",
-        "winston": "^3.18.3",
-        "xdg-basedir": "^5.1.0"
-    },
-    "devDependencies": {
-        "@eslint/js": "^9.39.1",
-        "@types/better-sqlite3": "^7.6.13",
-        "@types/fb-watchman": "^2.0.6",
-        "@types/node": "^24.10.1",
-        "drizzle-kit": "^0.31.8",
-        "eslint": "^9.39.1",
-        "eslint-config-prettier": "^10.1.8",
-        "eslint-plugin-prettier": "^5.5.4",
-        "husky": "^9.1.7",
-        "lint-staged": "^16.2.7",
-        "prettier": "^3.7.3",
-        "tsx": "^4.20.6",
-        "typescript": "^5.9.3",
-        "typescript-eslint": "^8.48.0"
-    },
-    "lint-staged": {
-        "*.{ts,js}": [
-            "eslint --fix",
-            "prettier --write"
-        ],
-        "*.{json,md}": [
-            "prettier --write"
-        ]
-    }
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  }
 }

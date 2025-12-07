@@ -4,7 +4,7 @@
  * Manages the sync job queue for buffered file operations.
  */
 
-import { eq, and, lte } from 'drizzle-orm';
+import { eq, and, lte, notInArray, inArray } from 'drizzle-orm';
 import { db, schema } from './db/index.js';
 import { SyncJobStatus, SyncEventType } from './db/schema.js';
 import { createNode } from './create.js';
@@ -36,12 +36,16 @@ const MAX_RETRIES = RETRY_DELAYS_SEC.length;
 // Jitter as percentage of retry delay (0.25 = 25%)
 const JITTER_FACTOR = 0.25;
 
+// Stale processing job threshold in milliseconds (2 minutes)
+const STALE_PROCESSING_MS = 2 * 60 * 1000;
+
 // ============================================================================
 // Job Queue Functions
 // ============================================================================
 
 /**
- * Add a sync job to the queue.
+ * Add a sync job to the queue, or update if one already exists for this localPath.
+ * Uses upsert logic: if a job for localPath exists, update it; otherwise insert.
  * No-op if dryRun is true.
  */
 export function enqueueJob(
@@ -53,6 +57,7 @@ export function enqueueJob(
   dryRun: boolean
 ): void {
   if (dryRun) return;
+
   db.insert(schema.syncJobs)
     .values({
       eventType: params.eventType,
@@ -63,55 +68,155 @@ export function enqueueJob(
       nRetries: 0,
       lastError: null,
     })
+    .onConflictDoUpdate({
+      target: schema.syncJobs.localPath,
+      set: {
+        eventType: params.eventType,
+        remotePath: params.remotePath,
+        status: SyncJobStatus.PENDING,
+        retryAt: new Date(),
+        nRetries: 0,
+        lastError: null,
+      },
+    })
     .run();
 }
 
 /**
- * Get the next pending job that's ready to be processed.
+ * Get the next job to process:
+ * 1. PENDING jobs not in the processing queue (ready to start)
+ * 2. PROCESSING jobs in the processing queue with startedAt > 2 min ago (stale/abandoned)
  */
 export function getNextPendingJob() {
-  return db
+  const now = new Date();
+  const staleThreshold = new Date(Date.now() - STALE_PROCESSING_MS);
+
+  // Get all localPaths currently in the processing queue
+  const processingPaths = db
+    .select({ localPath: schema.processingQueue.localPath })
+    .from(schema.processingQueue)
+    .all()
+    .map((row) => row.localPath);
+
+  // Get stale localPaths (in processing queue with startedAt > 2 min ago)
+  const stalePaths = db
+    .select({ localPath: schema.processingQueue.localPath })
+    .from(schema.processingQueue)
+    .where(lte(schema.processingQueue.startedAt, staleThreshold))
+    .all()
+    .map((row) => row.localPath);
+
+  // PENDING jobs not in processing queue
+  const pendingJobsQuery = db
     .select()
     .from(schema.syncJobs)
     .where(
       and(
         eq(schema.syncJobs.status, SyncJobStatus.PENDING),
-        lte(schema.syncJobs.retryAt, new Date())
+        lte(schema.syncJobs.retryAt, now),
+        processingPaths.length > 0
+          ? notInArray(schema.syncJobs.localPath, processingPaths)
+          : undefined
       )
-    )
-    .orderBy(schema.syncJobs.retryAt)
-    .limit(1)
-    .get();
+    );
+
+  // PROCESSING jobs that are stale (in processing queue with startedAt > 2 min ago)
+  const staleProcessingJobsQuery =
+    stalePaths.length > 0
+      ? db
+          .select()
+          .from(schema.syncJobs)
+          .where(
+            and(
+              eq(schema.syncJobs.status, SyncJobStatus.PROCESSING),
+              inArray(schema.syncJobs.localPath, stalePaths)
+            )
+          )
+      : null;
+
+  // Union and get first result (or just pending if no stale jobs)
+  if (staleProcessingJobsQuery) {
+    return pendingJobsQuery
+      .union(staleProcessingJobsQuery)
+      .orderBy(schema.syncJobs.retryAt)
+      .limit(1)
+      .get();
+  }
+
+  return pendingJobsQuery.orderBy(schema.syncJobs.retryAt).limit(1).get();
 }
 
 /**
  * Mark a job as synced (completed successfully).
+ * Only sets SYNCED if status is still PROCESSING (not if a new update set it back to PENDING).
+ * Always removes from processing_queue regardless.
  * No-op if dryRun is true.
  */
-export function markJobSynced(jobId: number, dryRun: boolean): void {
+export function markJobSynced(jobId: number, localPath: string, dryRun: boolean): void {
   if (dryRun) return;
+
+  // Only set SYNCED if status is still PROCESSING
   db.update(schema.syncJobs)
     .set({ status: SyncJobStatus.SYNCED, lastError: null })
-    .where(eq(schema.syncJobs.id, jobId))
+    .where(and(eq(schema.syncJobs.id, jobId), eq(schema.syncJobs.status, SyncJobStatus.PROCESSING)))
     .run();
+
+  // Always remove from processing queue
+  db.delete(schema.processingQueue).where(eq(schema.processingQueue.localPath, localPath)).run();
 }
 
 /**
  * Mark a job as blocked (failed permanently after max retries).
+ * Only sets BLOCKED if status is still PROCESSING.
+ * Always removes from processing_queue.
  * No-op if dryRun is true.
  */
-export function markJobBlocked(jobId: number, error: string, dryRun: boolean): void {
+export function markJobBlocked(
+  jobId: number,
+  localPath: string,
+  error: string,
+  dryRun: boolean
+): void {
   if (dryRun) return;
+
+  // Only set BLOCKED if status is still PROCESSING
   db.update(schema.syncJobs)
     .set({ status: SyncJobStatus.BLOCKED, lastError: error })
+    .where(and(eq(schema.syncJobs.id, jobId), eq(schema.syncJobs.status, SyncJobStatus.PROCESSING)))
+    .run();
+
+  // Always remove from processing queue
+  db.delete(schema.processingQueue).where(eq(schema.processingQueue.localPath, localPath)).run();
+}
+
+/**
+ * Mark a job as processing (in-flight).
+ * Also upserts into processing_queue to track active processing.
+ * No-op if dryRun is true.
+ */
+export function markJobProcessing(jobId: number, localPath: string, dryRun: boolean): void {
+  if (dryRun) return;
+
+  // Set status to PROCESSING
+  db.update(schema.syncJobs)
+    .set({ status: SyncJobStatus.PROCESSING })
     .where(eq(schema.syncJobs.id, jobId))
+    .run();
+
+  // Upsert into processing queue with current time
+  db.insert(schema.processingQueue)
+    .values({ localPath, startedAt: new Date() })
+    .onConflictDoUpdate({
+      target: schema.processingQueue.localPath,
+      set: { startedAt: new Date() },
+    })
     .run();
 }
 
 // Index in RETRY_DELAYS_SEC for 256s (~4 min) - network errors cap here
 const NETWORK_RETRY_CAP_INDEX = 4;
 
-/** Check if an error message indicates a network error */
+/** Check if an error message indicates a transient/retryable error */
 function isNetworkError(error: string): boolean {
   const networkPatterns = [
     'ECONNREFUSED',
@@ -125,6 +230,7 @@ function isNetworkError(error: string): boolean {
     'network',
     'timeout',
     'connection',
+    'Draft revision already exists', // A previous upload is still pending, but likely hung
   ];
   const lowerError = error.toLowerCase();
   return networkPatterns.some((pattern) => lowerError.includes(pattern.toLowerCase()));
@@ -133,10 +239,12 @@ function isNetworkError(error: string): boolean {
 /**
  * Schedule a job for retry with exponential backoff and jitter.
  * Network errors are retried indefinitely at max ~4 min intervals.
+ * Also removes from processing_queue.
  * No-op if dryRun is true.
  */
 export function scheduleRetry(
   jobId: number,
+  localPath: string,
   nRetries: number,
   error: string,
   isNetworkError: boolean,
@@ -163,6 +271,7 @@ export function scheduleRetry(
 
   db.update(schema.syncJobs)
     .set({
+      status: SyncJobStatus.PENDING,
       nRetries: newRetries,
       retryAt,
       lastError: error,
@@ -170,13 +279,10 @@ export function scheduleRetry(
     .where(eq(schema.syncJobs.id, jobId))
     .run();
 
-  if (isNetworkError) {
-    logger.info(`Job ${jobId} (network error) scheduled for retry in ${Math.round(delaySec)}s`);
-  } else {
-    logger.info(
-      `Job ${jobId} scheduled for retry in ${Math.round(delaySec)}s (attempt ${newRetries}/${MAX_RETRIES})`
-    );
-  }
+  // Remove from processing queue
+  db.delete(schema.processingQueue).where(eq(schema.processingQueue.localPath, localPath)).run();
+
+  logger.info(`Job ${jobId} scheduled for retry in ${Math.round(delaySec)}s`);
 }
 
 /**
@@ -188,6 +294,9 @@ export async function processNextJob(client: ProtonDriveClient, dryRun: boolean)
   if (!job) return false;
 
   const { id, eventType, localPath, remotePath, nRetries } = job;
+
+  // Mark as PROCESSING immediately to prevent other workers from picking it up
+  markJobProcessing(id, localPath, dryRun);
 
   try {
     if (eventType === SyncEventType.DELETE) {
@@ -218,7 +327,7 @@ export async function processNextJob(client: ProtonDriveClient, dryRun: boolean)
     }
 
     // Job completed successfully
-    markJobSynced(id, dryRun);
+    markJobSynced(id, localPath, dryRun);
 
     return true;
   } catch (error) {
@@ -227,9 +336,10 @@ export async function processNextJob(client: ProtonDriveClient, dryRun: boolean)
 
     if (!networkError && nRetries >= MAX_RETRIES) {
       logger.error(`Job ${id} failed permanently after ${MAX_RETRIES} retries: ${errorMessage}`);
-      markJobBlocked(id, errorMessage, dryRun);
+      markJobBlocked(id, localPath, errorMessage, dryRun);
     } else {
-      scheduleRetry(id, nRetries, errorMessage, networkError, dryRun);
+      logger.error(`Job ${id} failed: ${errorMessage}`);
+      scheduleRetry(id, localPath, nRetries, errorMessage, networkError, dryRun);
     }
 
     return true;
@@ -254,11 +364,21 @@ export async function processAllPendingJobs(
 /**
  * Get counts of jobs by status.
  */
-export function getJobCounts(): { pending: number; synced: number; blocked: number } {
+export function getJobCounts(): {
+  pending: number;
+  processing: number;
+  synced: number;
+  blocked: number;
+} {
   const pending = db
     .select()
     .from(schema.syncJobs)
     .where(eq(schema.syncJobs.status, SyncJobStatus.PENDING))
+    .all().length;
+  const processing = db
+    .select()
+    .from(schema.syncJobs)
+    .where(eq(schema.syncJobs.status, SyncJobStatus.PROCESSING))
     .all().length;
   const synced = db
     .select()
@@ -271,5 +391,5 @@ export function getJobCounts(): { pending: number; synced: number; blocked: numb
     .where(eq(schema.syncJobs.status, SyncJobStatus.BLOCKED))
     .all().length;
 
-  return { pending, synced, blocked };
+  return { pending, processing, synced, blocked };
 }

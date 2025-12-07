@@ -35,10 +35,10 @@ program
 program
   .command('start')
   .description('Start syncing changes to Proton Drive')
-  .option('-v, --verbose', 'Enable verbose output to console')
   .option('-n, --dry-run', 'Show what would be synced without making changes')
   .option('-w, --watch', 'Keep running and watch for changes')
   .option('-d, --daemon', 'Run as daemon (requires --watch, enables stop signal handling)')
+  .option('--debug', 'Enable debug logging')
   .action(startCommand);
 
 program

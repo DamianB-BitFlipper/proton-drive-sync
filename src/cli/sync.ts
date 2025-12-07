@@ -8,7 +8,7 @@ import { execSync } from 'child_process';
 import watchman from 'fb-watchman';
 import { getClock, setClock } from '../state.js';
 import { loadConfig, type Config } from '../config.js';
-import { logger, enableVerbose } from '../logger.js';
+import { logger, disableConsoleLogging, enableDebug } from '../logger.js';
 import { authenticateFromKeychain } from './auth.js';
 import { hasSignal, consumeSignal, isAlreadyRunning } from '../signals.js';
 import { enqueueJob, processAllPendingJobs } from '../jobs.js';
@@ -20,12 +20,13 @@ import type { ProtonDriveClient } from '../types.js';
 // ============================================================================
 
 interface FileChange {
-  name: string;
-  size: number;
-  mtime_ms: number;
-  exists: boolean;
-  type: 'f' | 'd';
-  watchRoot: string; // Which watch root this change came from
+  name: string; // Relative path from the watch root
+  size: number; // File size in bytes
+  mtime_ms: number; // Last modification time in milliseconds since epoch
+  exists: boolean; // false if the file was deleted
+  type: 'f' | 'd'; // 'f' for file, 'd' for directory
+  new: boolean; // true if file is newer than the 'since' clock (i.e., newly created)
+  watchRoot: string; // Which watch root this change came from (added by us, not from Watchman)
 }
 
 interface WatchmanQueryResponse {
@@ -100,11 +101,11 @@ function queueChange(file: FileChange): void {
   let eventType: SyncEventType;
   if (!file.exists) {
     eventType = SyncEventType.DELETE;
-  } else if (file.type === 'd') {
+  } else if (file.new) {
+    // Newly created file or directory
     eventType = SyncEventType.CREATE;
   } else {
-    // For files, we treat both create and modify as UPDATE
-    // (createNode handles both cases)
+    // Modified existing file or directory
     eventType = SyncEventType.UPDATE;
   }
 
@@ -170,7 +171,7 @@ function subscribeWatchman(
 function buildWatchmanQuery(savedClock: string | null, relative: string): Record<string, unknown> {
   const query: Record<string, unknown> = {
     expression: ['anyof', ['type', 'f'], ['type', 'd']],
-    fields: ['name', 'size', 'mtime_ms', 'exists', 'type'],
+    fields: ['name', 'size', 'mtime_ms', 'exists', 'type', 'new'],
   };
 
   if (savedClock) {
@@ -283,6 +284,8 @@ async function setupWatchmanDaemon(config: Config): Promise<void> {
     // Check if this is one of our subscriptions
     if (!resp.subscription.startsWith(SUB_NAME)) return;
 
+    logger.debug(`Watchman event: ${resp.subscription} (${resp.files.length} files)`);
+
     // Extract the watch root from the subscription name
     const dirName = resp.subscription.replace(`${SUB_NAME}-`, '');
     const watchRoot = config.sync_dirs.find((d) => basename(realpathSync(d)) === dirName) || '';
@@ -296,6 +299,9 @@ async function setupWatchmanDaemon(config: Config): Promise<void> {
 
     for (const file of resp.files) {
       const fileChange = file as unknown as Omit<FileChange, 'watchRoot'>;
+      logger.debug(
+        `  File: ${fileChange.name} (exists: ${fileChange.exists}, type: ${fileChange.type}, new: ${fileChange.new})`
+      );
       queueChange({ ...fileChange, watchRoot: resolvedRoot });
     }
   });
@@ -326,11 +332,16 @@ function startJobProcessor(): NodeJS.Timeout {
 // ============================================================================
 
 export async function startCommand(options: {
-  verbose: boolean;
   dryRun: boolean;
   watch: boolean;
   daemon: boolean;
+  debug: boolean;
 }): Promise<void> {
+  // Enable debug logging if requested
+  if (options.debug) {
+    enableDebug();
+  }
+
   // Validate: --daemon requires --watch
   if (options.daemon && !options.watch) {
     console.error('Error: --daemon (-d) requires --watch (-w)');
@@ -348,8 +359,9 @@ export async function startCommand(options: {
     process.exit(1);
   }
 
-  if (options.verbose || options.dryRun) {
-    enableVerbose();
+  if (options.daemon) {
+    // Daemon mode: disable console logging (only log to file)
+    disableConsoleLogging();
   }
 
   if (options.dryRun) {
@@ -370,7 +382,12 @@ export async function startCommand(options: {
 
   if (watchMode) {
     // Watch mode: use subscriptions and keep running
-    await setupWatchmanDaemon(config);
+    try {
+      await setupWatchmanDaemon(config);
+    } catch (err) {
+      logger.error(`Failed to setup watchman daemon: ${err}`);
+      process.exit(1);
+    }
 
     // Start job processor (polls every 10 seconds)
     const jobProcessor = startJobProcessor();

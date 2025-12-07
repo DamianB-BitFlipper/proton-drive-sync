@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `idx_sync_jobs_local_path` ON `sync_jobs` (`local_path`);
