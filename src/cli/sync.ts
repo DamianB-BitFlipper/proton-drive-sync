@@ -10,7 +10,12 @@ import { getClock, setClock } from '../state.js';
 import { loadConfig, type Config } from '../config.js';
 import { logger, disableConsoleLogging, enableDebug } from '../logger.js';
 import { authenticateFromKeychain } from './auth.js';
-import { hasSignal, consumeSignal, isAlreadyRunning } from '../signals.js';
+import {
+  isAlreadyRunning,
+  registerSignalHandler,
+  startSignalListener,
+  stopSignalListener,
+} from '../signals.js';
 import { enqueueJob, processAllPendingJobs } from '../jobs.js';
 import { SyncEventType } from '../db/schema.js';
 import type { ProtonDriveClient } from '../api/types.js';
@@ -432,21 +437,20 @@ export async function startCommand(options: {
     // Start job processor (polls every 10 seconds)
     const jobProcessor = startJobProcessor();
 
-    // Check for stop signal every second
-    const stopSignalCheck = setInterval(() => {
-      if (hasSignal('stop')) {
-        consumeSignal('stop');
-        logger.info('Stop signal received. Shutting down...');
-        clearInterval(stopSignalCheck);
-        jobProcessor.stop();
-        watchmanClient.end();
-        process.exit(0);
-      }
-    }, 1000);
+    // Register stop signal handler
+    const handleStop = (): void => {
+      logger.info('Stop signal received. Shutting down...');
+      stopSignalListener();
+      jobProcessor.stop();
+      watchmanClient.end();
+      process.exit(0);
+    };
+    registerSignalHandler('stop', handleStop);
+    startSignalListener();
 
     // Handle graceful shutdown
     process.on('SIGINT', () => {
-      clearInterval(stopSignalCheck);
+      stopSignalListener();
       jobProcessor.stop();
       logger.info('Shutting down...');
       watchmanClient.end();

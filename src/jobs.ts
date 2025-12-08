@@ -4,12 +4,13 @@
  * Manages the sync job queue for buffered file operations.
  */
 
-import { eq, and, lte, notInArray, inArray } from 'drizzle-orm';
+import { eq, and, lte, inArray, isNull } from 'drizzle-orm';
 import { db, schema } from './db/index.js';
 import { SyncJobStatus, SyncEventType } from './db/schema.js';
 import { createNode } from './api/create.js';
 import { deleteNode } from './api/delete.js';
 import { logger, isDebugEnabled } from './logger.js';
+import { registerSignalHandler, unregisterSignalHandler } from './signals.js';
 import type { ProtonDriveClient } from './api/types.js';
 
 // ============================================================================
@@ -111,67 +112,52 @@ export function enqueueJob(
 }
 
 /**
- * Get the next job to process:
- * 1. PENDING jobs not in the processing queue (ready to start)
- * 2. PROCESSING jobs in the processing queue with startedAt > 2 min ago (stale/abandoned)
+ * Get the next job to process.
+ * Cleans up stale processing queue entries first, then returns next PENDING job.
  */
 export function getNextPendingJob() {
   const now = new Date();
   const staleThreshold = new Date(Date.now() - STALE_PROCESSING_MS);
 
-  // Get all localPaths currently in the processing queue
-  const processingPaths = db
-    .select({ localPath: schema.processingQueue.localPath })
-    .from(schema.processingQueue)
-    .all()
-    .map((row) => row.localPath);
-
-  // Get stale localPaths (in processing queue with startedAt > 2 min ago)
-  const stalePaths = db
-    .select({ localPath: schema.processingQueue.localPath })
-    .from(schema.processingQueue)
+  // Clean up stale entries from processing queue (startedAt > 2 min ago)
+  const staleCleanup = db
+    .delete(schema.processingQueue)
     .where(lte(schema.processingQueue.startedAt, staleThreshold))
-    .all()
-    .map((row) => row.localPath);
+    .run();
 
-  // PENDING jobs not in processing queue
-  const pendingJobsQuery = db
-    .select()
+  if (staleCleanup.changes > 0) {
+    logger.debug(`Cleaned up ${staleCleanup.changes} stale processing queue entries`);
+  }
+
+  // Return next PENDING job not currently being processed.
+  // LEFT JOIN with processing_queue and filter for NULL = job not in processing queue
+  return db
+    .select({
+      id: schema.syncJobs.id,
+      eventType: schema.syncJobs.eventType,
+      localPath: schema.syncJobs.localPath,
+      remotePath: schema.syncJobs.remotePath,
+      status: schema.syncJobs.status,
+      nRetries: schema.syncJobs.nRetries,
+      retryAt: schema.syncJobs.retryAt,
+      lastError: schema.syncJobs.lastError,
+      createdAt: schema.syncJobs.createdAt,
+    })
     .from(schema.syncJobs)
+    .leftJoin(
+      schema.processingQueue,
+      eq(schema.syncJobs.localPath, schema.processingQueue.localPath)
+    )
     .where(
       and(
         eq(schema.syncJobs.status, SyncJobStatus.PENDING),
         lte(schema.syncJobs.retryAt, now),
-        processingPaths.length > 0
-          ? notInArray(schema.syncJobs.localPath, processingPaths)
-          : undefined
+        isNull(schema.processingQueue.localPath)
       )
-    );
-
-  // PROCESSING jobs that are stale (in processing queue with startedAt > 2 min ago)
-  const staleProcessingJobsQuery =
-    stalePaths.length > 0
-      ? db
-          .select()
-          .from(schema.syncJobs)
-          .where(
-            and(
-              eq(schema.syncJobs.status, SyncJobStatus.PROCESSING),
-              inArray(schema.syncJobs.localPath, stalePaths)
-            )
-          )
-      : null;
-
-  // Union and get first result (or just pending if no stale jobs)
-  if (staleProcessingJobsQuery) {
-    return pendingJobsQuery
-      .union(staleProcessingJobsQuery)
-      .orderBy(schema.syncJobs.retryAt)
-      .limit(1)
-      .get();
-  }
-
-  return pendingJobsQuery.orderBy(schema.syncJobs.retryAt).limit(1).get();
+    )
+    .orderBy(schema.syncJobs.retryAt)
+    .limit(1)
+    .get();
 }
 
 /**
@@ -492,9 +478,21 @@ export async function processAllPendingJobs(
   dryRun: boolean
 ): Promise<number> {
   let count = 0;
-  while (await processNextJob(client, dryRun)) {
-    count++;
+  let stopRequested = false;
+
+  const handleStop = (): void => {
+    stopRequested = true;
+  };
+  registerSignalHandler('stop', handleStop);
+
+  try {
+    while (!stopRequested && (await processNextJob(client, dryRun))) {
+      count++;
+    }
+  } finally {
+    unregisterSignalHandler('stop', handleStop);
   }
+
   return count;
 }
 
