@@ -8,7 +8,7 @@
   },
   "scripts": {
     "preinstall": "which watchman || (echo 'Error: Watchman is required. Install from: https://facebook.github.io/watchman/docs/install' && exit 1)",
-    "build": "tsc && cp -r src/db/migrations dist/db/ && mkdir -p dist/dashboard && cp src/dashboard/index.html dist/dashboard/",
+    "build": "tsc && cp -r src/db/migrations dist/db/ && mkdir -p dist/dashboard dist/dashboard1 && cp src/dashboard/index.html dist/dashboard/ && cp src/dashboard1/index.html dist/dashboard1/",
     "build:check": "tsc --noEmit",
     "prepare": "husky"
   },

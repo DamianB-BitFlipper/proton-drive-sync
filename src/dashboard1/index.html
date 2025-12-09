@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="en" class="h-full bg-gray-900 text-gray-100 antialiased">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Proton Drive Sync (Dashboard1)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+      /* Custom Scrollbar for Logs */
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #1f2937;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #4b5563;
+        border-radius: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #6b7280;
+      }
+      [x-cloak] {
+        display: none !important;
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              proton: {
+                DEFAULT: '#6d4aff',
+                dark: '#5a3dd6',
+                light: '#886bff',
+              },
+            },
+            fontFamily: {
+              mono: [
+                'SF Mono',
+                'Menlo',
+                'Monaco',
+                'Consolas',
+                'Liberation Mono',
+                'Courier New',
+                'monospace',
+              ],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body class="h-full flex flex-col" x-data="dashboard()" x-init="init()">
+    <!-- Dry-Run Warning Banner -->
+    <div
+      x-show="dryRun"
+      x-cloak
+      class="bg-amber-500/90 text-amber-950 px-4 py-2.5 text-center font-medium text-sm shadow-lg"
+    >
+      <div class="flex items-center justify-center gap-2">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+          />
+        </svg>
+        <span>DRY-RUN MODE - No changes are being synced. Information shown may be incorrect.</span>
+      </div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 shadow-sm sticky top-0 z-50">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-proton flex items-center justify-center shadow-lg shadow-proton/20"
+          >
+            <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+          </div>
+          <h1 class="text-xl font-bold tracking-tight text-white">Proton Drive Sync</h1>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <!-- Auth Status (hidden when disconnected) -->
+          <div
+            x-show="connected"
+            class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-900 border border-gray-700 transition-colors duration-300"
+            :class="{
+              'border-green-500/30 bg-green-500/10': auth.status === 'authenticated',
+              'border-amber-500/30 bg-amber-500/10': auth.status === 'authenticating',
+              'border-red-500/30 bg-red-500/10': auth.status === 'failed',
+              'border-gray-500/30 bg-gray-500/10': auth.status === 'pending'
+            }"
+          >
+            <!-- Spinner for authenticating -->
+            <svg
+              x-show="auth.status === 'authenticating'"
+              class="animate-spin h-3 w-3 text-amber-400"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              ></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            <!-- Check icon for authenticated -->
+            <svg
+              x-show="auth.status === 'authenticated'"
+              class="h-3 w-3 text-green-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="3"
+                d="M5 13l4 4L19 7"
+              />
+            </svg>
+            <!-- X icon for failed -->
+            <svg
+              x-show="auth.status === 'failed'"
+              class="h-3 w-3 text-red-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="3"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+            <!-- Clock icon for pending -->
+            <svg
+              x-show="auth.status === 'pending'"
+              class="h-3 w-3 text-gray-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <span
+              class="text-xs font-medium"
+              :class="{
+                'text-green-400': auth.status === 'authenticated',
+                'text-amber-400': auth.status === 'authenticating',
+                'text-red-400': auth.status === 'failed',
+                'text-gray-400': auth.status === 'pending'
+              }"
+            >
+              <template x-if="auth.status === 'pending'">
+                <span>Waiting for auth...</span>
+              </template>
+              <template x-if="auth.status === 'authenticating'">
+                <span>Authenticating...</span>
+              </template>
+              <template x-if="auth.status === 'authenticated'">
+                <span x-text="'Authenticated as: ' + (auth.username || 'User')"></span>
+              </template>
+              <template x-if="auth.status === 'failed'">
+                <span>Auth Failed</span>
+              </template>
+            </span>
+          </div>
+
+          <!-- Connection Status -->
+          <div
+            class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-900 border border-gray-700 transition-colors duration-300"
+            :class="connected ? 'border-green-500/30 bg-green-500/10' : 'border-red-500/30 bg-red-500/10'"
+          >
+            <div class="relative flex h-2.5 w-2.5">
+              <span
+                x-show="connected"
+                class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"
+              ></span>
+              <span
+                class="relative inline-flex rounded-full h-2.5 w-2.5"
+                :class="connected ? 'bg-green-500' : 'bg-red-500'"
+              ></span>
+            </div>
+            <span
+              class="text-xs font-medium"
+              :class="connected ? 'text-green-400' : 'text-red-400'"
+              x-text="connected ? 'Connected' : 'Disconnected'"
+            ></span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 lg:p-8">
+      <div class="max-w-7xl mx-auto space-y-8">
+        <!-- Stats Overview -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <!-- Pending -->
+          <div
+            class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-sm hover:border-amber-500/50 transition-colors group relative overflow-hidden"
+          >
+            <div
+              class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"
+            >
+              <svg
+                class="w-12 h-12 text-amber-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </div>
+            <dt class="text-sm font-medium text-gray-400">Pending</dt>
+            <dd
+              class="mt-2 text-3xl font-bold text-white group-hover:text-amber-400 transition-colors"
+              x-text="stats.pending"
+            >
+              0
+            </dd>
+          </div>
+
+          <!-- Processing -->
+          <div
+            class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-sm hover:border-blue-500/50 transition-colors group relative overflow-hidden"
+          >
+            <div
+              class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"
+            >
+              <svg
+                class="w-12 h-12 text-blue-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+            </div>
+            <dt class="text-sm font-medium text-gray-400">Processing</dt>
+            <dd
+              class="mt-2 text-3xl font-bold text-white group-hover:text-blue-400 transition-colors"
+              x-text="stats.processing"
+            >
+              0
+            </dd>
+          </div>
+
+          <!-- Synced -->
+          <div
+            class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-sm hover:border-green-500/50 transition-colors group relative overflow-hidden"
+          >
+            <div
+              class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"
+            >
+              <svg
+                class="w-12 h-12 text-green-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            </div>
+            <dt class="text-sm font-medium text-gray-400">Synced</dt>
+            <dd
+              class="mt-2 text-3xl font-bold text-white group-hover:text-green-400 transition-colors"
+              x-text="stats.synced"
+            >
+              0
+            </dd>
+          </div>
+
+          <!-- Blocked -->
+          <div
+            class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-sm hover:border-red-500/50 transition-colors group relative overflow-hidden"
+          >
+            <div
+              class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"
+            >
+              <svg
+                class="w-12 h-12 text-red-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+            </div>
+            <dt class="text-sm font-medium text-gray-400">Blocked</dt>
+            <dd
+              class="mt-2 text-3xl font-bold text-white group-hover:text-red-400 transition-colors"
+              x-text="stats.blocked"
+            >
+              0
+            </dd>
+          </div>
+        </div>
+
+        <!-- Main Content Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Active Processing -->
+          <div class="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[400px]">
+            <div
+              class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl sticky top-0"
+            >
+              <h2
+                class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2"
+              >
+                <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                Active Transfers
+              </h2>
+              <span
+                class="text-xs font-mono text-gray-500"
+                x-text="processing.length + ' items'"
+              ></span>
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
+              <template x-if="processing.length === 0">
+                <div
+                  class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2"
+                >
+                  <svg
+                    class="w-10 h-10 opacity-20"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
+                  <p class="text-sm">Queue is empty</p>
+                </div>
+              </template>
+              <div class="space-y-1">
+                <template x-for="job in processing" :key="job.id">
+                  <div
+                    class="px-3 py-2.5 rounded-lg bg-gray-900/50 border border-gray-700/50 hover:border-blue-500/30 transition-colors group"
+                  >
+                    <div class="flex items-start gap-3">
+                      <svg
+                        class="w-4 h-4 text-blue-500 mt-0.5 shrink-0 animate-spin"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                        />
+                      </svg>
+                      <div class="min-w-0 flex-1">
+                        <div
+                          class="text-xs font-mono text-gray-300 truncate"
+                          x-text="formatPath(job.localPath)"
+                        ></div>
+                        <div
+                          class="text-[10px] text-gray-500 mt-0.5 truncate"
+                          x-text="job.localPath"
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- Blocked Jobs -->
+          <div class="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[400px]">
+            <div
+              class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl sticky top-0"
+            >
+              <h2
+                class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2"
+              >
+                <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                Blocked Items
+              </h2>
+              <span
+                class="text-xs font-mono text-gray-500"
+                x-text="blocked.length + ' items'"
+              ></span>
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
+              <template x-if="blocked.length === 0">
+                <div
+                  class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2"
+                >
+                  <svg
+                    class="w-10 h-10 opacity-20"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <p class="text-sm">All systems nominal</p>
+                </div>
+              </template>
+              <div class="space-y-1">
+                <template x-for="job in blocked" :key="job.id">
+                  <div
+                    class="px-3 py-2.5 rounded-lg bg-red-500/5 border border-red-500/20 hover:bg-red-500/10 transition-colors group"
+                  >
+                    <div class="flex items-start gap-3">
+                      <svg
+                        class="w-4 h-4 text-red-500 mt-0.5 shrink-0"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                        />
+                      </svg>
+                      <div class="min-w-0 flex-1">
+                        <div
+                          class="text-xs font-mono text-red-200 truncate"
+                          x-text="formatPath(job.localPath)"
+                        ></div>
+                        <div
+                          class="text-[10px] text-red-400/70 mt-1 line-clamp-2"
+                          x-text="job.lastError"
+                        ></div>
+                      </div>
+                      <div
+                        class="shrink-0 text-[10px] font-mono text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20"
+                      >
+                        Retry: <span x-text="job.nRetries"></span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent History -->
+        <div class="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[300px]">
+          <div
+            class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl sticky top-0"
+          >
+            <h2
+              class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2"
+            >
+              <span class="w-2 h-2 rounded-full bg-green-500"></span>
+              Recently Synced
+            </h2>
+            <span class="text-xs font-mono text-gray-500" x-text="recent.length + ' items'"></span>
+          </div>
+          <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
+            <template x-if="recent.length === 0">
+              <div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2">
+                <p class="text-sm">No recent activity</p>
+              </div>
+            </template>
+            <div class="space-y-1">
+              <template x-for="job in recent" :key="job.id">
+                <div
+                  class="px-3 py-2 rounded-lg hover:bg-gray-700/50 transition-colors flex items-center gap-3"
+                >
+                  <svg
+                    class="w-4 h-4 text-green-500 shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                  <div class="min-w-0 flex-1 flex items-center justify-between gap-4">
+                    <span
+                      class="text-xs font-mono text-gray-300 truncate"
+                      x-text="formatPath(job.localPath)"
+                    ></span>
+                    <span
+                      class="text-[10px] text-gray-500 font-mono whitespace-nowrap"
+                      x-text="formatTime(job.createdAt)"
+                    ></span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Logs -->
+        <div class="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[400px]">
+          <div
+            class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl sticky top-0"
+          >
+            <h2
+              class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2"
+            >
+              <svg
+                class="w-4 h-4 text-gray-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 6h16M4 12h16m-7 6h7"
+                />
+              </svg>
+              Live Logs
+            </h2>
+            <div class="flex items-center gap-2">
+              <span
+                class="w-2 h-2 rounded-full bg-green-500 animate-pulse"
+                x-show="connected"
+              ></span>
+
+              <!-- Log Level Filter (Minimum Threshold) -->
+              <div class="flex items-center gap-2 ml-4">
+                <span class="text-[10px] text-gray-500 font-medium uppercase tracking-wider"
+                  >Min Level</span
+                >
+                <div class="flex bg-gray-900 rounded-lg p-0.5 border border-gray-700">
+                  <button
+                    @click="logLevel = 20"
+                    class="px-2 py-0.5 text-[10px] font-medium rounded transition-all duration-200 relative"
+                    :class="logLevel === 20 ? 'bg-gray-700 text-gray-200 shadow-sm z-10' : 'text-gray-500 hover:text-gray-400 hover:bg-gray-800/50'"
+                  >
+                    DBG
+                  </button>
+                  <button
+                    @click="logLevel = 30"
+                    class="px-2 py-0.5 text-[10px] font-medium rounded transition-all duration-200 relative"
+                    :class="logLevel === 30 ? 'bg-blue-900/50 text-blue-200 shadow-sm z-10' : 'text-gray-500 hover:text-gray-400 hover:bg-gray-800/50'"
+                  >
+                    INF
+                  </button>
+                  <button
+                    @click="logLevel = 40"
+                    class="px-2 py-0.5 text-[10px] font-medium rounded transition-all duration-200 relative"
+                    :class="logLevel === 40 ? 'bg-amber-900/50 text-amber-200 shadow-sm z-10' : 'text-gray-500 hover:text-gray-400 hover:bg-gray-800/50'"
+                  >
+                    WRN
+                  </button>
+                  <button
+                    @click="logLevel = 50"
+                    class="px-2 py-0.5 text-[10px] font-medium rounded transition-all duration-200 relative"
+                    :class="logLevel === 50 ? 'bg-red-900/50 text-red-200 shadow-sm z-10' : 'text-gray-500 hover:text-gray-400 hover:bg-gray-800/50'"
+                  >
+                    ERR
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div
+            class="flex-1 overflow-y-auto custom-scrollbar p-4 bg-gray-950 font-mono text-xs leading-relaxed"
+            x-ref="logsContainer"
+          >
+            <template x-if="logs.length === 0">
+              <div class="text-gray-600 italic">Waiting for logs...</div>
+            </template>
+            <template x-for="(line, index) in logs" :key="index">
+              <div
+                x-show="getLineLevel(line) >= logLevel"
+                class="break-all border-l-2 pl-3 py-0.5"
+                :class="{
+                   'border-red-500/50 bg-red-500/5 text-red-200': isError(line),
+                   'border-amber-500/50 bg-amber-500/5 text-amber-200': isWarn(line),
+                   'border-blue-500/50 text-blue-200': isInfo(line),
+                   'border-gray-700 text-gray-500': isDebug(line)
+                 }"
+              >
+                <span x-text="formatLogLine(line)"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      function dashboard() {
+        return {
+          connected: false,
+          dryRun: false,
+          auth: {
+            status: 'pending',
+            username: null,
+            error: null,
+          },
+          stats: { pending: 0, processing: 0, synced: 0, blocked: 0 },
+          recent: [],
+          blocked: [],
+          processing: [],
+          logs: [],
+          logLevel: 20, // Default to DEBUG (20)
+          eventsRetryDelay: 1000, // Exponential backoff for SSE reconnection
+          logsRetryDelay: 1000,
+          eventsSource: null,
+          logsSource: null,
+
+          async init() {
+            console.log('[init] START');
+            // Don't block on these - fetch in parallel and let them complete
+            this.fetchConfig();
+            this.fetchAuth();
+            // Connect SSE streams first (non-blocking)
+            this.connectEvents();
+            this.connectLogs();
+            // Then fetch initial state
+            await this.fetchEntireJobState();
+            console.log('[init] END');
+          },
+
+          async fetchConfig() {
+            try {
+              const res = await fetch('/api/config');
+              const config = await res.json();
+              this.dryRun = config.dryRun;
+            } catch (err) {
+              console.error('Failed to fetch config:', err);
+            }
+          },
+
+          async fetchAuth() {
+            try {
+              const res = await fetch('/api/auth');
+              this.auth = await res.json();
+            } catch (err) {
+              console.error('Failed to fetch auth:', err);
+            }
+          },
+
+          formatPath(path) {
+            return path || '';
+          },
+
+          formatTime(dateStr) {
+            if (!dateStr) return '';
+            return new Date(dateStr).toLocaleTimeString();
+          },
+
+          getLineLevel(line) {
+            if (line.includes('"level":"error"') || line.includes('"level":50')) return 50;
+            if (line.includes('"level":"warn"') || line.includes('"level":40')) return 40;
+            if (line.includes('"level":"info"') || line.includes('"level":30')) return 30;
+            if (line.includes('"level":"debug"') || line.includes('"level":20')) return 20;
+            return 20; // Default to debug if unknown
+          },
+
+          isError(line) {
+            return this.getLineLevel(line) === 50;
+          },
+          isWarn(line) {
+            return this.getLineLevel(line) === 40;
+          },
+          isInfo(line) {
+            return this.getLineLevel(line) === 30;
+          },
+          isDebug(line) {
+            return this.getLineLevel(line) === 20;
+          },
+
+          formatLogLine(line) {
+            try {
+              const json = JSON.parse(line);
+              return `[${new Date(json.time || json.timestamp).toLocaleTimeString()}] ${json.msg || json.message}`;
+            } catch (e) {
+              return line;
+            }
+          },
+
+          async fetchEntireJobState() {
+            console.log('[fetchEntireJobState] START');
+            try {
+              const [statsRes, recentRes, blockedRes, processingRes] = await Promise.all([
+                fetch('/api/stats'),
+                fetch('/api/jobs/recent'),
+                fetch('/api/jobs/blocked'),
+                fetch('/api/jobs/processing'),
+              ]);
+
+              this.stats = await statsRes.json();
+              this.recent = await recentRes.json();
+              this.blocked = await blockedRes.json();
+              this.processing = await processingRes.json();
+            } catch (err) {
+              console.error('Failed to fetch data:', err);
+            }
+            console.log('[fetchEntireJobState] END');
+          },
+
+          connectEvents() {
+            if (this.eventsSource) {
+              this.eventsSource.close();
+            }
+            this.eventsSource = new EventSource('/api/events');
+            this.eventsSource.onopen = () => {
+              this.connected = true;
+              this.eventsRetryDelay = 1000; // Reset backoff on success
+            };
+            this.eventsSource.onerror = () => {
+              this.connected = false;
+              setTimeout(() => this.connectEvents(), this.eventsRetryDelay);
+              this.eventsRetryDelay = Math.min(this.eventsRetryDelay * 2, 30000); // Max 30s
+            };
+            this.eventsSource.addEventListener('stats', (e) => {
+              this.stats = JSON.parse(e.data);
+            });
+            this.eventsSource.addEventListener('job_state_diff', (e) => {
+              const diff = JSON.parse(e.data);
+              this.applyDiff(diff);
+            });
+            this.eventsSource.addEventListener('auth', (e) => {
+              this.auth = JSON.parse(e.data);
+            });
+          },
+
+          /**
+           * Apply a diff to update stats and job lists incrementally.
+           * This avoids refetching all data on every change.
+           */
+          applyDiff(diff) {
+            // Apply stats deltas
+            this.stats.pending += diff.statsDelta.pending;
+            this.stats.processing += diff.statsDelta.processing;
+            this.stats.synced += diff.statsDelta.synced;
+            this.stats.blocked += diff.statsDelta.blocked;
+
+            // Ensure stats don't go negative (edge case protection)
+            this.stats.pending = Math.max(0, this.stats.pending);
+            this.stats.processing = Math.max(0, this.stats.processing);
+            this.stats.synced = Math.max(0, this.stats.synced);
+            this.stats.blocked = Math.max(0, this.stats.blocked);
+
+            // Remove jobs from processing list
+            if (diff.removeProcessing.length > 0) {
+              const removeSet = new Set(diff.removeProcessing);
+              this.processing = this.processing.filter((job) => !removeSet.has(job.id));
+            }
+
+            // Add jobs to processing list
+            for (const job of diff.addProcessing) {
+              this.processing.push(job);
+            }
+
+            // Add jobs to recent list (prepend, keep max 50)
+            for (const job of diff.addRecent) {
+              this.recent.unshift(job);
+            }
+            if (this.recent.length > 50) {
+              this.recent = this.recent.slice(0, 50);
+            }
+
+            // Add jobs to blocked list
+            for (const job of diff.addBlocked) {
+              this.blocked.push(job);
+            }
+          },
+
+          connectLogs() {
+            if (this.logsSource) {
+              this.logsSource.close();
+            }
+            this.logsSource = new EventSource('/api/logs');
+            this.logsSource.onopen = () => {
+              this.logsRetryDelay = 1000; // Reset backoff on success
+            };
+            this.logsSource.addEventListener('log', (e) => {
+              this.logs.push(e.data);
+              if (this.logs.length > 500) this.logs = this.logs.slice(-500);
+              this.$nextTick(() => {
+                const container = this.$refs.logsContainer;
+                if (container) container.scrollTop = container.scrollHeight;
+              });
+            });
+            this.logsSource.onerror = () => {
+              setTimeout(() => this.connectLogs(), this.logsRetryDelay);
+              this.logsRetryDelay = Math.min(this.logsRetryDelay * 2, 30000); // Max 30s
+            };
+          },
+        };
+      }
+    </script>
+  </body>
+</html>

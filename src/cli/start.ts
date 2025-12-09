@@ -15,6 +15,7 @@ import {
 } from '../signals.js';
 import { getStoredCredentials, createClient, type ProtonDriveClient } from './auth.js';
 import { startDashboard, stopDashboard, sendAuthStatus } from '../dashboard/server.js';
+import { startDashboard1, stopDashboard1, sendAuthStatus1 } from '../dashboard1/server.js';
 import { runOneShotSync, runWatchMode } from '../sync/index.js';
 
 // ============================================================================
@@ -42,6 +43,7 @@ async function authenticateWithStatus(sdkDebug = false): Promise<ProtonDriveClie
 
   if (!storedCreds) {
     sendAuthStatus({ status: 'failed' });
+    sendAuthStatus1({ status: 'failed' });
     logger.error('No credentials found. Run `proton-drive-sync auth` first.');
     process.exit(1);
   }
@@ -61,6 +63,7 @@ async function authenticateWithStatus(sdkDebug = false): Promise<ProtonDriveClie
     try {
       const client = await createClient(storedCreds.username, storedCreds.password, sdkDebug);
       sendAuthStatus({ status: 'authenticated', username: storedCreds.username });
+      sendAuthStatus1({ status: 'authenticated', username: storedCreds.username });
       logger.info('Authenticated.');
       return client;
     } catch (error) {
@@ -78,6 +81,10 @@ async function authenticateWithStatus(sdkDebug = false): Promise<ProtonDriveClie
       if (attempt < MAX_RETRIES - 1) {
         const delayMs = Math.pow(4, attempt) * 1000; // 1s, 4s, 16s, 64s
         sendAuthStatus({
+          status: 'authenticating',
+          username: storedCreds.username,
+        });
+        sendAuthStatus1({
           status: 'authenticating',
           username: storedCreds.username,
         });
@@ -167,6 +174,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
   // Set up cleanup handler
   const cleanup = (): void => {
     stopDashboard();
+    stopDashboard1();
     stopSignalListener();
     releaseRunLock();
   };
@@ -189,6 +197,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
   const dryRun = options.dryRun ?? false;
   if (options.watch) {
     startDashboard(dryRun);
+    startDashboard1(dryRun);
   }
 
   // Authenticate with Proton

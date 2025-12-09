@@ -10,7 +10,9 @@
     "rootDir": "./src",
     "declaration": true,
     "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
