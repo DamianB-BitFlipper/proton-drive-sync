@@ -42,8 +42,7 @@ async function authenticateWithStatus(sdkDebug = false): Promise<ProtonDriveClie
 
   if (!storedCreds) {
     sendAuthStatus({ status: 'failed' });
-    logger.error('No credentials found. Run `proton-drive-sync auth` first.');
-    process.exit(1);
+    throw new Error('No credentials found. Run `proton-drive-sync auth` first.');
   }
 
   logger.info(`Authenticating as ${storedCreds.username}...`);

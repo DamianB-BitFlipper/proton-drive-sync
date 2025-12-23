@@ -102,7 +102,7 @@ export async function runOneShotSync(options: SyncOptions): Promise<void> {
   logger.info(`Found ${totalChanges} changes to sync`);
 
   // Process all jobs
-  const processed = await processAllPendingJobs(client, dryRun);
+  const processed = await processAllPendingJobs(client, config, dryRun);
   logger.info(`Processed ${processed} jobs`);
 
   closeWatchman();
@@ -124,7 +124,7 @@ export async function runWatchMode(options: SyncOptions): Promise<void> {
   await setupWatchSubscriptions(config, (file) => handleFileChange(file, config, dryRun), dryRun);
 
   // Start the job processor loop
-  const processorHandle = startJobProcessorLoop(client, dryRun);
+  const processorHandle = startJobProcessorLoop(client, config, dryRun);
 
   // Wait for stop signal
   await new Promise<void>((resolve) => {
@@ -159,7 +159,11 @@ interface ProcessorHandle {
 /**
  * Start the job processor loop that polls for pending jobs.
  */
-function startJobProcessorLoop(client: ProtonDriveClient, dryRun: boolean): ProcessorHandle {
+function startJobProcessorLoop(
+  client: ProtonDriveClient,
+  config: Config,
+  dryRun: boolean
+): ProcessorHandle {
   let running = true;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -170,7 +174,7 @@ function startJobProcessorLoop(client: ProtonDriveClient, dryRun: boolean): Proc
     logger.debug('Job processor polling...');
 
     try {
-      const processed = await processAllPendingJobs(client, dryRun);
+      const processed = await processAllPendingJobs(client, config, dryRun);
       if (processed > 0) {
         logger.info(`Processed ${processed} sync job(s)`);
       }

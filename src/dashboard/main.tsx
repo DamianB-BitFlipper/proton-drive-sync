@@ -242,21 +242,39 @@ const server = serve({
 
 // Handle server errors (e.g., EADDRINUSE)
 server.on('error', (err: NodeJS.ErrnoException) => {
-  if (process.send) {
-    process.send({ type: 'error', error: err.message, code: err.code });
-  }
+  safeSend({ type: 'error', error: err.message, code: err.code });
   process.exit(1);
 });
 
+/**
+ * Safely send IPC message to parent process.
+ * If the parent has exited, the send will fail with EPIPE - we handle this gracefully.
+ */
+function safeSend(message: Record<string, unknown>): void {
+  if (process.send) {
+    try {
+      process.send(message);
+    } catch {
+      // Parent process has exited, shut down gracefully
+      server.close();
+      process.exit(0);
+    }
+  }
+}
+
 // Wait for server to be listening before notifying parent
 server.on('listening', () => {
-  if (process.send) {
-    process.send({ type: 'ready', port: DASHBOARD_PORT });
-  }
+  safeSend({ type: 'ready', port: DASHBOARD_PORT });
 });
 
 // Exit if parent process dies (IPC channel closes)
 process.on('disconnect', () => {
+  server.close();
+  process.exit(0);
+});
+
+// Handle EPIPE errors from IPC when parent exits unexpectedly
+process.on('error', () => {
   server.close();
   process.exit(0);
 });

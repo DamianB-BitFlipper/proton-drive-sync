@@ -10,6 +10,7 @@ import { deleteNode } from '../proton/delete.js';
 import { logger } from '../logger.js';
 import { registerSignalHandler, unregisterSignalHandler } from '../signals.js';
 import type { ProtonDriveClient } from '../proton/types.js';
+import type { Config } from '../config.js';
 import {
   getNextPendingJob,
   markJobSynced,
@@ -19,12 +20,6 @@ import {
   scheduleRetry,
   ErrorCategory,
 } from './queue.js';
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-const SYNC_CONCURRENCY = 2;
 
 // ============================================================================
 // Helper Functions
@@ -147,6 +142,7 @@ export async function processNextJob(client: ProtonDriveClient, dryRun: boolean)
  */
 export async function processAllPendingJobs(
   client: ProtonDriveClient,
+  config: Config,
   dryRun: boolean
 ): Promise<number> {
   let count = 0;
@@ -158,7 +154,7 @@ export async function processAllPendingJobs(
   registerSignalHandler('stop', handleStop);
 
   try {
-    // Process jobs with up to SYNC_CONCURRENCY in parallel using a worker pool pattern
+    // Process jobs with up to sync_concurrency in parallel using a worker pool pattern
     const activeJobs = new Set<Promise<boolean>>();
 
     const startNextJob = (): void => {
@@ -175,7 +171,7 @@ export async function processAllPendingJobs(
     };
 
     // Start initial batch of concurrent jobs
-    for (let i = 0; i < SYNC_CONCURRENCY; i++) {
+    for (let i = 0; i < config.sync_concurrency; i++) {
       startNextJob();
     }
 

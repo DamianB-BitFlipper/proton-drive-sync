@@ -15,6 +15,7 @@ import { xdgConfig } from 'xdg-basedir';
 export interface Config {
   sync_dirs: string[];
   remote_root: string;
+  sync_concurrency: number;
 }
 
 // ============================================================================
@@ -65,6 +66,11 @@ export function loadConfig(): Config {
     // Default remote_root to empty string if not set
     if (config.remote_root === undefined) {
       config.remote_root = '';
+    }
+
+    // Default sync_concurrency to 8 if not set
+    if (config.sync_concurrency === undefined) {
+      config.sync_concurrency = 8;
     }
 
     // Validate all directories exist
