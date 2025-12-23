@@ -81,9 +81,10 @@ export function acquireRunLock(): boolean {
 }
 
 /**
- * Release the run lock: removes the "running" flag.
+ * Release the run lock: removes the "running" and "paused" flags.
  * Should be called during graceful shutdown.
  */
 export function releaseRunLock(): void {
   clearFlag(FLAGS.RUNNING);
+  clearFlag(FLAGS.PAUSED);
 }

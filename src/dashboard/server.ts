@@ -167,9 +167,10 @@ let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 let currentConfig: Config | null = null;
 let currentDryRun = false;
 let currentAuthStatus: AuthStatusUpdate = { status: 'pending' };
+let lastSentStatus: DashboardStatus | null = null;
 
-// Heartbeat interval (1 second) - sends current status to dashboard
-const HEARTBEAT_INTERVAL_MS = 1000;
+// Heartbeat interval (1.5 seconds) - checks for status changes
+const HEARTBEAT_INTERVAL_MS = 1500;
 
 /**
  * Start the dashboard in a separate process.
@@ -337,6 +338,15 @@ function setupHotReload(): void {
 function restartDashboard(): void {
   if (!currentConfig) return;
 
+  // Stop heartbeat
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+
+  // Reset last sent status so initial status is sent on restart
+  lastSentStatus = null;
+
   // Stop current process
   if (dashboardProcess) {
     if (jobEventHandler) {
@@ -372,14 +382,31 @@ export function sendAuthStatus(update: AuthStatusUpdate): void {
 
 /**
  * Send current status (auth + isPaused) to the dashboard subprocess.
+ * Always sends a heartbeat, but only includes status data if changed.
  * Called on heartbeat interval and when auth status changes.
+ * @param force - If true, send status even if it hasn't changed (used for initial send)
  */
-function sendStatusToDashboard(): void {
-  if (dashboardProcess?.connected) {
-    const status: DashboardStatus = {
-      auth: currentAuthStatus,
-      isPaused: isPaused(),
-    };
+function sendStatusToDashboard(force = false): void {
+  if (!dashboardProcess?.connected) return;
+
+  const status: DashboardStatus = {
+    auth: currentAuthStatus,
+    isPaused: isPaused(),
+  };
+
+  // Check if status has changed
+  const hasChanged =
+    force ||
+    !lastSentStatus ||
+    lastSentStatus.isPaused !== status.isPaused ||
+    lastSentStatus.auth.status !== status.auth.status ||
+    lastSentStatus.auth.username !== status.auth.username;
+
+  if (hasChanged) {
     dashboardProcess.send({ type: 'status', ...status });
+    lastSentStatus = status;
+  } else {
+    // Always send heartbeat to keep SSE connection alive
+    dashboardProcess.send({ type: 'heartbeat' });
   }
 }

@@ -536,7 +536,7 @@ export function getRecentJobs(limit: number = 50) {
 /**
  * Get blocked jobs with error details.
  */
-export function getBlockedJobs() {
+export function getBlockedJobs(limit: number = 50) {
   return db
     .select({
       id: schema.syncJobs.id,
@@ -548,6 +548,7 @@ export function getBlockedJobs() {
     })
     .from(schema.syncJobs)
     .where(eq(schema.syncJobs.status, SyncJobStatus.BLOCKED))
+    .limit(limit)
     .all();
 }
 
@@ -613,4 +614,30 @@ export function getRetryJobs(limit: number = 50) {
     .orderBy(schema.syncJobs.retryAt)
     .limit(limit)
     .all();
+}
+
+/**
+ * Set retry_at to now for all PENDING jobs with retry_at in the future.
+ * This makes them immediately eligible for processing.
+ */
+export function retryAllNow(): number {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const now = new Date();
+
+  const result = db
+    .update(schema.syncJobs)
+    .set({ retryAt: now })
+    .where(
+      and(
+        eq(schema.syncJobs.status, SyncJobStatus.PENDING),
+        sql`${schema.syncJobs.retryAt} > ${nowSeconds}`
+      )
+    )
+    .run();
+
+  if (result.changes > 0) {
+    logger.info(`Moved ${result.changes} jobs from retry queue to immediate processing`);
+  }
+
+  return result.changes;
 }

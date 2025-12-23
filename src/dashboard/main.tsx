@@ -24,6 +24,7 @@ import {
   getProcessingJobs,
   getPendingJobs,
   getRetryJobs,
+  retryAllNow,
 } from '../sync/queue.js';
 import { FLAGS, setFlag, clearFlag } from '../flags.js';
 import type { DashboardDiff, AuthStatusUpdate, DashboardJob, DashboardStatus } from './server.js';
@@ -53,6 +54,7 @@ try {
 // Local event emitter to bridge IPC messages to SSE streams
 const stateDiffEvents = new EventEmitter();
 const statusEvents = new EventEmitter();
+const heartbeatEvents = new EventEmitter();
 
 // Current status (for API endpoint)
 let currentAuthStatus: AuthStatusUpdate = { status: 'pending' };
@@ -83,6 +85,8 @@ process.on(
         currentIsPaused = msg.isPaused;
       }
       statusEvents.emit('status', { auth: currentAuthStatus, isPaused: currentIsPaused });
+    } else if (msg.type === 'heartbeat') {
+      heartbeatEvents.emit('heartbeat');
     }
   }
 );
@@ -308,6 +312,22 @@ function renderRetryList(jobs: DashboardJob[]): string {
 </div>`
     )
     .join('')}</div>`;
+}
+
+/** Render retry all now button - hidden when no retry jobs */
+function renderRetryAllButton(shouldRender: boolean): string {
+  if (!shouldRender) return '';
+  return `
+<button
+  hx-post="/api/signal/retry-all-now"
+  hx-swap="outerHTML"
+  class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-900 border border-orange-500/30 hover:border-orange-500/50 hover:bg-orange-500/10 transition-colors cursor-pointer"
+>
+  <svg class="h-3 w-3 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+  <span class="text-xs font-medium text-orange-400">Retry All Now</span>
+</button>`;
 }
 
 /** Render auth status HTML */
@@ -573,6 +593,10 @@ app.get('/api/fragments/pause-button', (c) => {
   return c.html(renderPauseButton(currentIsPaused));
 });
 
+app.get('/api/fragments/retry-all-button', (c) => {
+  return c.html(renderRetryAllButton(getRetryJobs(1).length > 0));
+});
+
 /** Toggle pause state */
 app.post('/api/toggle-pause', (c) => {
   if (currentIsPaused) {
@@ -585,6 +609,26 @@ app.post('/api/toggle-pause', (c) => {
   // Emit status event so all SSE clients get updated
   statusEvents.emit('status', { auth: currentAuthStatus, isPaused: currentIsPaused });
   return c.html(renderPauseButton(currentIsPaused));
+});
+
+/** Handle signals from dashboard */
+app.post('/api/signal/:signal', (c) => {
+  const signal = c.req.param('signal');
+
+  if (signal === 'retry-all-now') {
+    retryAllNow();
+    // Re-render the retry list (now empty) and pending list (now has the jobs)
+    stateDiffEvents.emit('job_state_diff', {
+      pending: getPendingJobs(50),
+      processing: [],
+      synced: [],
+      blocked: [],
+      retry: getRetryJobs(50),
+    });
+    return c.html(renderRetryAllButton(getRetryJobs(1).length > 0));
+  }
+
+  return c.text('Unknown signal', 400);
 });
 
 // ============================================================================
@@ -649,19 +693,46 @@ app.get('/api/events', async (c) => {
       stream.writeSSE({ event: 'heartbeat', data: '' });
     };
 
+    const heartbeatHandler = () => {
+      stream.writeSSE({ event: 'heartbeat', data: '' });
+    };
+
     stateDiffEvents.on('job_state_diff', stateDiffHandler);
     statusEvents.on('status', statusHandler);
+    heartbeatEvents.on('heartbeat', heartbeatHandler);
 
-    // Send initial state
+    // Send full initial state on connection
     const counts = getJobCounts();
+    const processingJobs = getProcessingJobs();
+    const blockedJobs = getBlockedJobs(50);
+    const pendingJobs = getPendingJobs(50);
+    const recentJobs = getRecentJobs(50);
+    const retryJobs = getRetryJobs(50);
+
     await stream.writeSSE({ event: 'stats', data: renderStats(counts) });
     await stream.writeSSE({ event: 'auth', data: renderAuthStatus(currentAuthStatus) });
     await stream.writeSSE({ event: 'paused', data: renderPausedBadge(currentIsPaused) });
+    await stream.writeSSE({ event: 'pause-button', data: renderPauseButton(currentIsPaused) });
+    await stream.writeSSE({ event: 'processing', data: renderProcessingList(processingJobs) });
+    await stream.writeSSE({ event: 'processing-count', data: `${processingJobs.length} items` });
+    await stream.writeSSE({ event: 'blocked', data: renderBlockedList(blockedJobs) });
+    await stream.writeSSE({ event: 'blocked-count', data: `${blockedJobs.length} items` });
+    await stream.writeSSE({ event: 'pending', data: renderPendingList(pendingJobs) });
+    await stream.writeSSE({ event: 'pending-count', data: `${pendingJobs.length} items` });
+    await stream.writeSSE({ event: 'recent', data: renderRecentList(recentJobs) });
+    await stream.writeSSE({ event: 'recent-count', data: `${recentJobs.length} items` });
+    await stream.writeSSE({ event: 'retry', data: renderRetryList(retryJobs) });
+    await stream.writeSSE({ event: 'retry-count', data: `${retryJobs.length} items` });
+    await stream.writeSSE({
+      event: 'retry-all-button',
+      data: renderRetryAllButton(retryJobs.length > 0),
+    });
 
     // Cleanup on close
     stream.onAbort(() => {
       stateDiffEvents.off('job_state_diff', stateDiffHandler);
       statusEvents.off('status', statusHandler);
+      heartbeatEvents.off('heartbeat', heartbeatHandler);
     });
 
     // Keep the stream open

@@ -61,6 +61,14 @@
       hx-swap="outerHTML"
     ></div>
 
+    <!-- Hidden heartbeat listener to trigger pulse animation -->
+    <div
+      id="heartbeat-listener"
+      class="hidden"
+      sse-swap="heartbeat"
+      hx-on::after-swap="document.body.dispatchEvent(new CustomEvent('heartbeat-received'))"
+    ></div>
+
     <!-- Header -->
     <header class="bg-gray-800 border-b border-gray-700 shadow-sm sticky top-0 z-50">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -74,15 +82,6 @@
         </div>
 
         <div class="flex items-center gap-4">
-          <!-- Pause/Resume Button -->
-          <div
-            id="pause-button"
-            hx-get="/api/fragments/pause-button"
-            hx-trigger="load"
-            hx-swap="innerHTML"
-            sse-swap="pause-button"
-          ></div>
-
           <!-- Auth Status -->
           <div id="auth-status" hx-swap="morph:innerHTML" sse-swap="auth"></div>
 
@@ -101,7 +100,8 @@
           >
             <div class="relative flex h-2.5 w-2.5">
               <span
-                class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"
+                id="heartbeat-ping"
+                class="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-0"
               ></span>
               <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
             </div>
@@ -156,15 +156,25 @@
                 <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
                 Active Transfers
               </h2>
-              <span
-                id="processing-count"
-                class="text-xs font-mono text-gray-500"
-                hx-get="/api/fragments/processing-count"
-                hx-trigger="load"
-                hx-swap="morph:innerHTML"
-                sse-swap="processing-count"
-                >0 items</span
-              >
+              <div class="flex items-center gap-3">
+                <!-- Pause/Resume Button -->
+                <div
+                  id="pause-button"
+                  hx-get="/api/fragments/pause-button"
+                  hx-trigger="load"
+                  hx-swap="innerHTML"
+                  sse-swap="pause-button"
+                ></div>
+                <span
+                  id="processing-count"
+                  class="text-xs font-mono text-gray-500"
+                  hx-get="/api/fragments/processing-count"
+                  hx-trigger="load"
+                  hx-swap="innerHTML"
+                  sse-swap="processing-count"
+                  >0 items</span
+                >
+              </div>
             </div>
             <div
               id="processing-list"
@@ -209,7 +219,7 @@
                 class="text-xs font-mono text-gray-500"
                 hx-get="/api/fragments/blocked-count"
                 hx-trigger="load"
-                hx-swap="morph:innerHTML"
+                hx-swap="innerHTML"
                 sse-swap="blocked-count"
                 >0 items</span
               >
@@ -260,7 +270,7 @@
                 class="text-xs font-mono text-gray-500"
                 hx-get="/api/fragments/pending-count"
                 hx-trigger="load"
-                hx-swap="morph:innerHTML"
+                hx-swap="innerHTML"
                 sse-swap="pending-count"
                 >0 items</span
               >
@@ -295,7 +305,7 @@
                 class="text-xs font-mono text-gray-500"
                 hx-get="/api/fragments/recent-count"
                 hx-trigger="load"
-                hx-swap="morph:innerHTML"
+                hx-swap="innerHTML"
                 sse-swap="recent-count"
                 >0 items</span
               >
@@ -325,15 +335,26 @@
                 <span class="w-2 h-2 rounded-full bg-orange-500"></span>
                 Retry Queue
               </h2>
-              <span
-                id="retry-count"
-                class="text-xs font-mono text-gray-500"
-                hx-get="/api/fragments/retry-count"
-                hx-trigger="load"
-                hx-swap="morph:innerHTML"
-                sse-swap="retry-count"
-                >0 items</span
-              >
+              <div class="flex items-center gap-3">
+                <!-- Retry All Now Button -->
+                <div
+                  id="retry-all-button"
+                  class="empty:hidden"
+                  hx-get="/api/fragments/retry-all-button"
+                  hx-trigger="load"
+                  hx-swap="innerHTML"
+                  sse-swap="retry-all-button"
+                ></div>
+                <span
+                  id="retry-count"
+                  class="text-xs font-mono text-gray-500"
+                  hx-get="/api/fragments/retry-count"
+                  hx-trigger="load"
+                  hx-swap="innerHTML"
+                  sse-swap="retry-count"
+                  >0 items</span
+                >
+              </div>
             </div>
             <div
               id="retry-list"
@@ -461,13 +482,27 @@
       document.body.addEventListener('htmx:sseOpen', () => {
         document.getElementById('connection-status').innerHTML = `
           <div class="relative flex h-2.5 w-2.5">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+            <span id="heartbeat-ping" class="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-0"></span>
             <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
           </div>
           <span class="text-xs font-medium text-green-400">Connected</span>
         `;
         document.getElementById('connection-status').className =
           'flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-900 border border-green-500/30 bg-green-500/10';
+      });
+
+      // Pulse the heartbeat dot on each heartbeat event
+      // Listen for custom event triggered by the hidden heartbeat listener
+      document.body.addEventListener('heartbeat-received', () => {
+        const ping = document.getElementById('heartbeat-ping');
+        if (ping) {
+          ping.classList.remove('opacity-0');
+          ping.classList.add('animate-ping', 'opacity-75');
+          setTimeout(() => {
+            ping.classList.remove('animate-ping', 'opacity-75');
+            ping.classList.add('opacity-0');
+          }, 500);
+        }
       });
 
       document.body.addEventListener('htmx:sseError', () => {
