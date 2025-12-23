@@ -1,7 +1,7 @@
 /**
  * Proton Drive Sync - Signal Management
  *
- * Inter-process communication via a signal queue stored in SQLite.
+ * Signals: Transient inter-process communication via a queue stored in SQLite.
  * Uses EventEmitter for 1-to-N in-process signal broadcasting.
  */
 
@@ -10,56 +10,11 @@ import { eq } from 'drizzle-orm';
 import { db, schema } from './db/index.js';
 
 const SIGNAL_POLL_INTERVAL_MS = 1000;
-const RUNNING_SIGNAL = 'running';
 
 // Central event emitter for signal broadcasting
 const signalEmitter = new EventEmitter();
 
 let pollingInterval: NodeJS.Timeout | null = null;
-
-/**
- * Check if a proton-drive-sync process is currently running (via "running" signal in DB).
- */
-export function isAlreadyRunning(): boolean {
-  return hasSignal(RUNNING_SIGNAL);
-}
-
-/**
- * Acquire the run lock: checks if another instance is running, clears stale signals,
- * and marks this process as running. All in one transaction.
- * Returns true if lock acquired, false if another instance is already running.
- * In dev mode (PROTON_DEV=1), forces lock acquisition for hot reload support.
- */
-export function acquireRunLock(): boolean {
-  const isDevMode = process.env.PROTON_DEV === '1';
-
-  return db.transaction((tx) => {
-    // Check if already running
-    const existing = tx
-      .select()
-      .from(schema.signals)
-      .where(eq(schema.signals.signal, RUNNING_SIGNAL))
-      .get();
-
-    if (existing && !isDevMode) {
-      return false;
-    }
-
-    // Clear all stale signals and mark as running
-    tx.delete(schema.signals).run();
-    tx.insert(schema.signals).values({ signal: RUNNING_SIGNAL, createdAt: new Date() }).run();
-
-    return true;
-  });
-}
-
-/**
- * Release the run lock: removes the "running" signal from the DB.
- * Should be called during graceful shutdown.
- */
-export function releaseRunLock(): void {
-  db.delete(schema.signals).where(eq(schema.signals.signal, RUNNING_SIGNAL)).run();
-}
 
 /**
  * Send a signal by adding it to the signal queue.

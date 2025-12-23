@@ -4,7 +4,8 @@
  * Pauses the syncing loop without stopping the process.
  */
 
-import { sendSignal, hasSignal, isAlreadyRunning } from '../signals.js';
+import { sendSignal } from '../signals.js';
+import { isAlreadyRunning, isPaused } from '../flags.js';
 
 /**
  * Pause the sync process by sending a pause signal.
@@ -17,18 +18,24 @@ export function pauseCommand(): void {
     return;
   }
 
+  // Check if already paused
+  if (isPaused()) {
+    console.log('Sync is already paused. Use "resume" to continue syncing.');
+    return;
+  }
+
   // Send pause signal to the process
   sendSignal('pause-sync');
   console.log('Pause signal sent. Waiting for confirmation...');
 
-  // Wait for up to 5 seconds for the process to consume the signal
+  // Wait for up to 5 seconds for the paused flag to be set
   const startTime = Date.now();
   const timeout = 5000;
   const checkInterval = 100;
 
   const waitForAck = (): void => {
-    // Signal consumed = process acknowledged
-    if (!hasSignal('pause-sync')) {
+    // Flag set = process acknowledged
+    if (isPaused()) {
       console.log('Syncing paused.');
       return;
     }

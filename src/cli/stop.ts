@@ -4,7 +4,8 @@
  * Stops a running proton-drive-sync process gracefully.
  */
 
-import { sendSignal, isAlreadyRunning } from '../signals.js';
+import { sendSignal } from '../signals.js';
+import { isAlreadyRunning } from '../flags.js';
 
 /**
  * Stop the sync process gracefully by sending a stop signal.

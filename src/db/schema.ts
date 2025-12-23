@@ -40,11 +40,21 @@ export const clocks = sqliteTable('clocks', {
 });
 
 /**
- * Signals table for inter-process communication queue.
+ * Signals table for inter-process communication queue (transient).
  */
 export const signals = sqliteTable('signals', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   signal: text('signal').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/**
+ * Flags table for persistent process state (running, paused, etc).
+ */
+export const flags = sqliteTable('flags', {
+  name: text('name').primaryKey(),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .$defaultFn(() => new Date()),

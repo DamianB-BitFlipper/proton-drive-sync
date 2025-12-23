@@ -158,6 +158,7 @@ let diffTimeout: ReturnType<typeof setTimeout> | null = null;
 let fileWatcher: ReturnType<typeof watch> | null = null;
 let currentConfig: Config | null = null;
 let currentDryRun = false;
+let currentAuthStatus: AuthStatusUpdate = { status: 'pending' };
 
 /**
  * Start the dashboard in a separate process.
@@ -197,6 +198,11 @@ export function startDashboard(config: Config, dryRun = false): void {
     if (msg.type === 'ready') {
       const hotReloadMsg = isDevMode ? ' (hot reload enabled)' : '';
       logger.info(`Dashboard running at http://localhost:${msg.port}${hotReloadMsg}`);
+
+      // Send current auth status when dashboard is ready
+      if (dashboardProcess?.connected) {
+        dashboardProcess.send({ type: 'auth', ...currentAuthStatus });
+      }
     }
   });
 
@@ -336,6 +342,8 @@ function restartDashboard(): void {
  * Send auth status update to the dashboard process.
  */
 export function sendAuthStatus(update: AuthStatusUpdate): void {
+  // Store current auth status for hot reload
+  currentAuthStatus = update;
   if (dashboardProcess?.connected) {
     dashboardProcess.send({ type: 'auth', ...update });
   }

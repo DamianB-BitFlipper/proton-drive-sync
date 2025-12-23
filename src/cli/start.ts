@@ -6,13 +6,8 @@
 
 import { loadConfig } from '../config.js';
 import { logger, enableDebug, disableConsoleLogging, setDryRun } from '../logger.js';
-import {
-  acquireRunLock,
-  releaseRunLock,
-  startSignalListener,
-  stopSignalListener,
-  registerSignalHandler,
-} from '../signals.js';
+import { startSignalListener, stopSignalListener, registerSignalHandler } from '../signals.js';
+import { acquireRunLock, releaseRunLock } from '../flags.js';
 import { getStoredCredentials, createClientFromTokens, type ProtonDriveClient } from './auth.js';
 import { startDashboard, stopDashboard, sendAuthStatus } from '../dashboard/server.js';
 import { runOneShotSync, runWatchMode } from '../sync/index.js';

@@ -8,6 +8,7 @@ import { join, basename } from 'path';
 import { SyncEventType } from '../db/schema.js';
 import { logger } from '../logger.js';
 import { registerSignalHandler } from '../signals.js';
+import { setFlag, clearFlag, isPaused, FLAGS } from '../flags.js';
 import { stopDashboard } from '../dashboard/server.js';
 import type { Config } from '../config.js';
 import type { ProtonDriveClient } from '../proton/types.js';
@@ -176,13 +177,21 @@ function startJobProcessorLoop(
   // Register pause/resume signal handlers
   const handlePause = (): void => {
     paused = true;
+    setFlag(FLAGS.PAUSED);
     logger.info('Sync paused');
   };
 
   const handleResume = (): void => {
     paused = false;
+    clearFlag(FLAGS.PAUSED);
     logger.info('Sync resumed');
   };
+
+  // Check if we were paused before restart (hot reload)
+  if (isPaused()) {
+    paused = true;
+    logger.info('Sync is paused (restored from previous state)');
+  }
 
   registerSignalHandler('pause-sync', handlePause);
   registerSignalHandler('resume-sync', handleResume);

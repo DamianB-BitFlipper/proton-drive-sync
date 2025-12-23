@@ -4,7 +4,8 @@
  * Resumes the syncing loop after it has been paused.
  */
 
-import { sendSignal, hasSignal, isAlreadyRunning } from '../signals.js';
+import { sendSignal } from '../signals.js';
+import { isAlreadyRunning, isPaused } from '../flags.js';
 
 /**
  * Resume the sync process by sending a resume signal.
@@ -17,18 +18,24 @@ export function resumeCommand(): void {
     return;
   }
 
+  // Check if actually paused
+  if (!isPaused()) {
+    console.log('Sync is not paused.');
+    return;
+  }
+
   // Send resume signal to the process
   sendSignal('resume-sync');
   console.log('Resume signal sent. Waiting for confirmation...');
 
-  // Wait for up to 5 seconds for the process to consume the signal
+  // Wait for up to 5 seconds for the paused flag to be cleared
   const startTime = Date.now();
   const timeout = 5000;
   const checkInterval = 100;
 
   const waitForAck = (): void => {
-    // Signal consumed = process acknowledged
-    if (!hasSignal('resume-sync')) {
+    // Flag cleared = process acknowledged
+    if (!isPaused()) {
       console.log('Syncing resumed.');
       return;
     }
