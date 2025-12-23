@@ -10,11 +10,49 @@
     </div>
 
     <!-- Made by -->
-    <h1 class="text-2xl sm:text-3xl text-gray-300 mb-2">
+    <h1 class="text-2xl sm:text-3xl text-gray-300 mb-4">
       made by <span class="font-bold text-white">Damian Barabonkov</span>
     </h1>
 
+    <!-- Badges -->
+    <div class="flex items-center gap-4 mb-4">
+      <!-- X (Twitter) Badge -->
+      <a
+        href="https://x.com/TheBitFlipper"
+        target="_blank"
+        class="h-9 flex items-center gap-2 px-3 bg-gray-900 border border-gray-600 rounded-full hover:border-gray-500 transition-colors"
+      >
+        <img src="/assets/x-logo.svg" alt="X" class="w-4 h-4" />
+        <span class="text-gray-300 text-sm font-medium">Follow</span>
+      </a>
+
+      <!-- GitHub Stars Badge -->
+      <a
+        href="https://github.com/DamianB-BitFlipper/proton-drive-sync"
+        target="_blank"
+        class="github-badge h-9 flex items-center gap-2 px-3 bg-gray-900 border border-gray-600 rounded-full hover:border-gray-500 transition-colors"
+      >
+        <img src="/assets/github.svg" alt="GitHub" class="w-4 h-4" />
+        <span class="text-gray-300 text-sm font-medium">GitHub</span>
+        <i data-lucide="star" class="w-4 h-4 text-white transition-colors fill-current"></i>
+        <img
+          src="https://img.shields.io/github/stars/DamianB-BitFlipper/proton-drive-sync?style=flat&label=&color=1f2937"
+          alt="Stars"
+          class="h-5"
+        />
+      </a>
+
+      <!-- Buy Me a Coffee -->
+      <a href="https://www.buymeacoffee.com/thebitflipper" target="_blank">
+        <img
+          src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
+          alt="Buy Me A Coffee"
+          class="h-9 w-auto"
+        />
+      </a>
+    </div>
+
     <!-- Version -->
-    <p class="text-gray-500 text-sm mt-4">Version <span class="font-mono">{{VERSION}}</span></p>
+    <p class="text-gray-500 text-sm">Version <span class="font-mono">{{VERSION}}</span></p>
   </div>
 </main>

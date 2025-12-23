@@ -801,6 +801,7 @@ async function composePage(
     .replace('{{HOME_TAB_CLASS}}', homeTabClass)
     .replace('{{SETTINGS_TAB_CLASS}}', settingsTabClass)
     .replace('{{ABOUT_TAB_CLASS}}', aboutTabClass)
+    .replace('{{HIDE_BADGES}}', options.activeTab === 'about' ? 'hidden' : '')
     .replace('{{CONTENT}}', contentHtml)
     .replace('{{PAGE_SCRIPTS}}', options.pageScripts);
 }
