@@ -29,17 +29,17 @@
       .tab-label {
         display: none;
       }
-      @media (min-width: 1200px) {
+      @media (min-width: 1150px) {
         .tab-label {
           display: inline;
         }
       }
       /* Hide GitHub text before title */
-      .github-text {
+      .socials-text {
         display: none;
       }
-      @media (min-width: 1100px) {
-        .github-text {
+      @media (min-width: 700px) {
+        .socials-text {
           display: inline;
         }
       }
@@ -140,20 +140,16 @@
 
     <!-- Header -->
     <header class="bg-gray-800 border-b border-gray-700 shadow-sm sticky top-0 z-50">
-      <div
-        class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4"
-      >
-        <div class="flex items-center gap-2 sm:gap-6 min-w-0">
-          <a href="/" class="flex items-center gap-2 sm:gap-3 shrink-0">
+      <div class="h-16 flex items-center justify-between gap-4 pl-4 pr-4">
+        <div class="flex items-center gap-6 min-w-0">
+          <a href="/" class="flex items-center gap-3 shrink-0">
             <img
               src="/assets/icon.svg"
               alt="Proton Drive Sync"
-              class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg shadow-lg shadow-proton/20"
+              class="w-8 h-8 rounded-lg shadow-lg shadow-proton/20"
             />
             <!-- Title: second to collapse (below 700px) -->
-            <h1
-              class="header-title text-lg lg:text-xl font-bold tracking-tight text-white whitespace-nowrap"
-            >
+            <h1 class="header-title text-xl font-bold tracking-tight text-white whitespace-nowrap">
               Proton Drive Sync
             </h1>
           </a>
@@ -162,7 +158,7 @@
           <nav class="flex items-center gap-1">
             <a
               href="/"
-              class="{{HIDE_HOME_TAB}} flex items-center gap-1.5 px-2 py-1 sm:py-1.5 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap {{HOME_TAB_CLASS}}"
+              class="{{HIDE_HOME_TAB}} flex items-center gap-1.5 px-2 py-1.5 text-sm font-medium transition-colors whitespace-nowrap {{HOME_TAB_CLASS}}"
             >
               <i data-lucide="house" class="w-4 h-4 shrink-0"></i>
               <!-- Tab labels: first to collapse (below 850px) -->
@@ -170,15 +166,15 @@
             </a>
             <a
               href="/settings"
-              class="flex items-center gap-1.5 px-2 py-1 sm:py-1.5 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap {{SETTINGS_TAB_CLASS}}"
+              class="flex items-center gap-1.5 px-2 py-1.5 text-sm font-medium transition-colors whitespace-nowrap {{SETTINGS_TAB_CLASS}}"
             >
-              <i data-lucide="settings" class="w-4 h-4 shrink-0"></i>
+              <i data-lucide="sliders-horizontal" class="w-4 h-4 shrink-0"></i>
               <!-- Tab labels: first to collapse (below 850px) -->
-              <span class="tab-label">Settings</span>
+              <span class="tab-label">Controls</span>
             </a>
             <a
               href="/about"
-              class="flex items-center gap-1.5 px-2 py-1 sm:py-1.5 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap {{ABOUT_TAB_CLASS}}"
+              class="flex items-center gap-1.5 px-2 py-1.5 text-sm font-medium transition-colors whitespace-nowrap {{ABOUT_TAB_CLASS}}"
             >
               <i data-lucide="compass" class="w-4 h-4 shrink-0"></i>
               <!-- Tab labels: first to collapse (below 850px) -->
@@ -187,9 +183,9 @@
           </nav>
         </div>
 
-        <div class="flex items-center gap-2 sm:gap-4 shrink-0">
+        <div class="flex items-center gap-4 shrink-0">
           <!-- X Follow, GitHub Stars Badge and Buy Me a Coffee (hidden on about page) -->
-          <div class="flex items-center gap-1 sm:gap-2 {{HIDE_BADGES}}">
+          <div class="flex items-center gap-2 {{HIDE_BADGES}}">
             <!-- X (Twitter) Follow Badge -->
             <a
               href="https://x.com/TheBitFlipper"
@@ -197,7 +193,7 @@
               class="x-badge-header h-9 flex items-center gap-2 px-3 bg-gray-900 border border-gray-600 rounded-full hover:border-gray-500 transition-colors"
             >
               <img src="/assets/x-logo.svg" alt="X" class="w-4 h-4" />
-              <span class="github-text text-gray-300 text-sm font-medium">Follow</span>
+              <span class="socials-text text-gray-300 text-sm font-medium">Follow</span>
             </a>
 
             <!-- GitHub Stars Badge -->
@@ -207,7 +203,7 @@
               class="github-badge-header h-9 flex items-center gap-2 px-3 bg-gray-900 border border-gray-600 rounded-full hover:border-gray-500 transition-colors"
             >
               <img src="/assets/github.svg" alt="GitHub" class="w-4 h-4" />
-              <span class="github-text text-gray-300 text-sm font-medium">GitHub</span>
+              <span class="socials-text text-gray-300 text-sm font-medium">GitHub</span>
               <i data-lucide="star" class="w-4 h-4 text-white transition-colors fill-current"></i>
               <img
                 src="https://img.shields.io/github/stars/DamianB-BitFlipper/proton-drive-sync?style=flat&label=&color=1f2937"
@@ -249,7 +245,7 @@
       </div>
     </header>
 
-    <main class="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 lg:p-8">{{CONTENT}}</main>
+    <main class="flex-1 overflow-y-auto custom-scrollbar p-8">{{CONTENT}}</main>
 
     <script>
       // Store SSE EventSource reference for cleanup

@@ -194,27 +194,45 @@ export async function serviceInstallCommand(): Promise<void> {
   }
 }
 
-export function serviceUninstallCommand(): void {
+export async function serviceUninstallCommand(): Promise<void> {
   if (process.platform !== 'darwin') {
     console.error('Error: Service uninstallation is only supported on macOS.');
     process.exit(1);
   }
 
-  if (!existsSync(PLIST_PATH)) {
-    console.log('Service is not installed.');
-    process.exit(0);
+  let uninstalledAny = false;
+
+  // Ask about watchman service
+  if (existsSync(WATCHMAN_PLIST_PATH)) {
+    const uninstallWatchman = await askYesNo('Uninstall watchman service?');
+    if (uninstallWatchman) {
+      console.log('Uninstalling watchman service...');
+      unloadService(WATCHMAN_SERVICE_NAME, WATCHMAN_PLIST_PATH);
+      unlinkSync(WATCHMAN_PLIST_PATH);
+      console.log('Watchman service uninstalled.');
+      uninstalledAny = true;
+    } else {
+      console.log('Skipping watchman service.');
+    }
   }
 
-  // Unload the service
-  try {
-    execSync(`launchctl unload "${PLIST_PATH}"`, { stdio: 'ignore' });
-  } catch {
-    // Ignore if not loaded
+  // Ask about proton-drive-sync service
+  if (existsSync(PLIST_PATH)) {
+    const uninstallSync = await askYesNo('Uninstall proton-drive-sync service?');
+    if (uninstallSync) {
+      console.log('Uninstalling proton-drive-sync service...');
+      unloadService(SERVICE_NAME, PLIST_PATH);
+      unlinkSync(PLIST_PATH);
+      console.log('proton-drive-sync service uninstalled.');
+      uninstalledAny = true;
+    } else {
+      console.log('Skipping proton-drive-sync service.');
+    }
   }
 
-  // Remove plist file
-  unlinkSync(PLIST_PATH);
-  console.log('Service uninstalled.');
+  if (!uninstalledAny) {
+    console.log('\nNo services were uninstalled.');
+  }
 }
 
 export function serviceUnloadCommand(): void {
