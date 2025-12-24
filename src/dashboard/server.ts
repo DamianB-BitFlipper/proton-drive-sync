@@ -316,6 +316,11 @@ export async function stopDashboard(): Promise<void> {
  * Watches the dashboard source directory and restarts the subprocess on changes.
  */
 function setupHotReload(): void {
+  // Only set up once - don't create multiple watchers
+  if (fileWatcher) {
+    return;
+  }
+
   // When running with tsx, __dirname is src/dashboard, otherwise dist/dashboard
   // We want to watch the source directory for changes
   const dashboardDir = __dirname.includes('dist')

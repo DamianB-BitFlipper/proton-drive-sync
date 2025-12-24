@@ -179,7 +179,7 @@ function renderStats(counts: {
 </div>`;
 }
 
-/** Render processing queue HTML (header + list) */
+/** Render processing queue HTML (header with pause button + list) */
 function renderProcessingQueue(jobs: DashboardJob[]): string {
   const isPaused = currentSyncStatus === 'paused';
 
@@ -190,7 +190,7 @@ function renderProcessingQueue(jobs: DashboardJob[]): string {
     ${isPaused ? 'Paused' : 'Active Transfers'}
   </h2>
   <div class="flex items-center gap-3">
-    <div id="pause-button" hx-get="/api/fragments/pause-button" hx-trigger="load" hx-swap="innerHTML" sse-swap="pause-button"></div>
+    <div id="pause-button">${renderPauseButton(currentSyncStatus)}</div>
     <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
   </div>
 </div>`;
@@ -1366,14 +1366,31 @@ app.get('/api/auth', (c) => {
 // GET /api/events - SSE stream of HTML fragment updates
 app.get('/api/events', async (c) => {
   return streamSSE(c, async (stream) => {
+    // Track previous state to avoid unnecessary re-renders
+    let lastProcessingJobIds: number[] = [];
+    let lastSyncStatus: SyncStatus = currentSyncStatus;
+
     const stateDiffHandler = (_diff: DashboardDiff) => {
       // On any state change, send updated HTML fragments
       const counts = getJobCounts();
+      const processingJobs = getProcessingJobs();
+
       stream.writeSSE({ event: 'stats', data: renderStats(counts) });
-      stream.writeSSE({
-        event: 'processing-queue',
-        data: renderProcessingQueue(getProcessingJobs()),
-      });
+
+      // Only send processing-queue if the jobs actually changed
+      const currentJobIds = processingJobs.map((j) => j.id).sort((a, b) => a - b);
+      const jobsChanged =
+        currentJobIds.length !== lastProcessingJobIds.length ||
+        currentJobIds.some((id, i) => id !== lastProcessingJobIds[i]);
+
+      if (jobsChanged) {
+        lastProcessingJobIds = currentJobIds;
+        stream.writeSSE({
+          event: 'processing-queue',
+          data: renderProcessingQueue(processingJobs),
+        });
+      }
+
       stream.writeSSE({ event: 'blocked-queue', data: renderBlockedQueue(getBlockedJobs()) });
       stream.writeSSE({ event: 'pending-queue', data: renderPendingQueue(getPendingJobs(50)) });
       stream.writeSSE({ event: 'recent-queue', data: renderRecentQueue(getRecentJobs(50)) });
@@ -1382,19 +1399,23 @@ app.get('/api/events', async (c) => {
 
     const statusHandler = (status: DashboardStatus) => {
       const isPaused = status.syncStatus === 'paused';
-      // Forward full status: auth, paused badge, syncing badge, pause button, processing title, and heartbeat
+      // Forward full status: auth, paused badge, syncing badge, processing title
       stream.writeSSE({ event: 'auth', data: renderAuthStatus(status.auth) });
       stream.writeSSE({ event: 'paused', data: renderPausedBadge(isPaused) });
       stream.writeSSE({ event: 'syncing', data: renderSyncingBadge(status.syncStatus) });
-      stream.writeSSE({ event: 'pause-button', data: renderPauseButton(status.syncStatus) });
       stream.writeSSE({ event: 'processing-title', data: renderProcessingTitle(isPaused) });
       stream.writeSSE({ event: 'stop-section', data: renderStopSection(status.syncStatus) });
-      // Re-render processing and pending queues to update icons based on pause state
-      stream.writeSSE({
-        event: 'processing-queue',
-        data: renderProcessingQueue(getProcessingJobs()),
-      });
-      stream.writeSSE({ event: 'pending-queue', data: renderPendingQueue(getPendingJobs(50)) });
+
+      // Only re-render processing-queue if sync status changed (affects pause button)
+      if (status.syncStatus !== lastSyncStatus) {
+        lastSyncStatus = status.syncStatus;
+        stream.writeSSE({
+          event: 'processing-queue',
+          data: renderProcessingQueue(getProcessingJobs()),
+        });
+        stream.writeSSE({ event: 'pending-queue', data: renderPendingQueue(getPendingJobs(50)) });
+      }
+
       stream.writeSSE({ event: 'heartbeat', data: '' });
     };
 
