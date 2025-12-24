@@ -154,42 +154,12 @@
     <!-- Scheduled Retries -->
     <div class="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[300px]">
       <div
-        class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl"
-      >
-        <h2
-          class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2"
-        >
-          <span class="w-2 h-2 rounded-full bg-orange-500"></span>
-          Retry Queue
-        </h2>
-        <div class="flex items-center gap-3">
-          <!-- Retry All Now Button -->
-          <div
-            id="retry-all-button"
-            class="empty:hidden"
-            hx-get="/api/fragments/retry-all-button"
-            hx-trigger="load"
-            hx-swap="innerHTML"
-            sse-swap="retry-all-button"
-          ></div>
-          <span
-            id="retry-count"
-            class="text-xs font-mono text-gray-500"
-            hx-get="/api/fragments/retry-count"
-            hx-trigger="load"
-            hx-swap="innerHTML"
-            sse-swap="retry-count"
-            >0 items</span
-          >
-        </div>
-      </div>
-      <div
-        id="retry-list"
-        class="flex-1 overflow-y-auto custom-scrollbar p-2"
-        hx-get="/api/fragments/retry"
+        id="retry-queue"
+        class="flex flex-col h-full"
+        hx-get="/api/fragments/retry-queue"
         hx-trigger="load"
-        hx-swap="morph:innerHTML"
-        sse-swap="retry"
+        hx-swap="innerHTML"
+        sse-swap="retry-queue"
       >
         <div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2">
           <p class="text-sm">Loading...</p>

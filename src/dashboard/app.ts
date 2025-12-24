@@ -297,26 +297,53 @@ function renderPendingList(jobs: DashboardJob[]): string {
     .join('')}</div>`;
 }
 
-/** Render retry jobs list HTML */
-function renderRetryList(jobs: DashboardJob[]): string {
-  if (jobs.length === 0) {
-    return `
+/** Render retry queue HTML (header with button + list) */
+function renderRetryQueue(jobs: DashboardJob[]): string {
+  const retryAllButton =
+    jobs.length > 0
+      ? `
+<button
+  hx-post="/api/signal/retry-all-now"
+  hx-target="#retry-queue"
+  hx-swap="innerHTML"
+  class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-900 border border-orange-500/30 hover:border-orange-500/50 hover:bg-orange-500/10 transition-colors cursor-pointer"
+>
+  <svg class="h-3 w-3 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+  <span class="text-xs font-medium text-orange-400">Retry All Now</span>
+</button>`
+      : '';
+
+  const header = `
+<div class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl">
+  <h2 class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2">
+    <span class="w-2 h-2 rounded-full bg-orange-500"></span>
+    Retry Queue
+  </h2>
+  <div class="flex items-center gap-3">
+    ${retryAllButton}
+    <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
+  </div>
+</div>`;
+
+  const listContent =
+    jobs.length === 0
+      ? `
 <div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2">
   <svg class="w-10 h-10 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
   <p class="text-sm">No scheduled retries</p>
-</div>`;
-  }
-
-  return `<div class="space-y-1">${jobs
-    .map((job) => {
-      const retryAtIso = job.retryAt
-        ? typeof job.retryAt === 'string'
-          ? job.retryAt
-          : job.retryAt.toISOString()
-        : '';
-      return `
+</div>`
+      : `<div class="space-y-1">${jobs
+          .map((job) => {
+            const retryAtIso = job.retryAt
+              ? typeof job.retryAt === 'string'
+                ? job.retryAt
+                : job.retryAt.toISOString()
+              : '';
+            return `
 <div class="px-3 py-2 rounded-lg hover:bg-gray-700/50 transition-colors flex items-center gap-3">
   <svg class="w-4 h-4 text-orange-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -326,24 +353,12 @@ function renderRetryList(jobs: DashboardJob[]): string {
     <span class="text-[10px] text-orange-400 font-mono whitespace-nowrap retry-countdown" data-retry-at="${retryAtIso}"></span>
   </div>
 </div>`;
-    })
-    .join('')}</div>`;
-}
+          })
+          .join('')}</div>`;
 
-/** Render retry all now button - hidden when no retry jobs */
-function renderRetryAllButton(shouldRender: boolean): string {
-  if (!shouldRender) return '';
-  return `
-<button
-  hx-post="/api/signal/retry-all-now"
-  hx-swap="outerHTML"
-  class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-900 border border-orange-500/30 hover:border-orange-500/50 hover:bg-orange-500/10 transition-colors cursor-pointer"
->
-  <svg class="h-3 w-3 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-  </svg>
-  <span class="text-xs font-medium text-orange-400">Retry All Now</span>
-</button>`;
+  const list = `<div class="flex-1 overflow-y-auto custom-scrollbar p-2">${listContent}</div>`;
+
+  return header + list;
 }
 
 /** Render auth status HTML */
@@ -1082,13 +1097,9 @@ app.get('/api/fragments/pending-count', (c) => {
   return c.html(`${getPendingJobs(50).length} items`);
 });
 
-app.get('/api/fragments/retry', (c) => {
+app.get('/api/fragments/retry-queue', (c) => {
   const limit = parseInt(c.req.query('limit') || '50', 10);
-  return c.html(renderRetryList(getRetryJobs(limit)));
-});
-
-app.get('/api/fragments/retry-count', (c) => {
-  return c.html(`${getRetryJobs(50).length} items`);
+  return c.html(renderRetryQueue(getRetryJobs(limit)));
 });
 
 app.get('/api/fragments/auth-status', (c) => {
@@ -1105,10 +1116,6 @@ app.get('/api/fragments/config-info', (c) => {
 
 app.get('/api/fragments/pause-button', (c) => {
   return c.html(renderPauseButton(currentSyncStatus));
-});
-
-app.get('/api/fragments/retry-all-button', (c) => {
-  return c.html(renderRetryAllButton(getRetryJobs(1).length > 0));
 });
 
 app.get('/api/fragments/syncing-status', (c) => {
@@ -1178,7 +1185,7 @@ app.post('/api/signal/:signal', (c) => {
       blocked: [],
       retry: getRetryJobs(50),
     });
-    return c.html(renderRetryAllButton(getRetryJobs(1).length > 0));
+    return c.html(renderRetryQueue(getRetryJobs(50)));
   }
 
   return c.text('Unknown signal', 400);
@@ -1264,8 +1271,7 @@ app.get('/api/events', async (c) => {
       stream.writeSSE({ event: 'pending-count', data: `${getPendingJobs(50).length} items` });
       stream.writeSSE({ event: 'recent', data: renderRecentList(getRecentJobs(50)) });
       stream.writeSSE({ event: 'recent-count', data: `${getRecentJobs(50).length} items` });
-      stream.writeSSE({ event: 'retry', data: renderRetryList(getRetryJobs(50)) });
-      stream.writeSSE({ event: 'retry-count', data: `${getRetryJobs(50).length} items` });
+      stream.writeSSE({ event: 'retry-queue', data: renderRetryQueue(getRetryJobs(50)) });
     };
 
     const statusHandler = (status: DashboardStatus) => {
@@ -1317,12 +1323,7 @@ app.get('/api/events', async (c) => {
     await stream.writeSSE({ event: 'pending-count', data: `${pendingJobs.length} items` });
     await stream.writeSSE({ event: 'recent', data: renderRecentList(recentJobs) });
     await stream.writeSSE({ event: 'recent-count', data: `${recentJobs.length} items` });
-    await stream.writeSSE({ event: 'retry', data: renderRetryList(retryJobs) });
-    await stream.writeSSE({ event: 'retry-count', data: `${retryJobs.length} items` });
-    await stream.writeSSE({
-      event: 'retry-all-button',
-      data: renderRetryAllButton(retryJobs.length > 0),
-    });
+    await stream.writeSSE({ event: 'retry-queue', data: renderRetryQueue(retryJobs) });
 
     // Cleanup on close
     stream.onAbort(() => {
