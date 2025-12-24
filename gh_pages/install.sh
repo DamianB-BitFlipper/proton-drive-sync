@@ -102,6 +102,20 @@ if ! command -v tar >/dev/null 2>&1; then
     exit 1
 fi
 
+# Check for Homebrew
+if ! command -v brew >/dev/null 2>&1; then
+    echo -e "${RED}Error: Homebrew is required but not installed.${NC}"
+    echo -e "Install it from: https://brew.sh"
+    exit 1
+fi
+
+# Install Watchman if not present
+if ! command -v watchman >/dev/null 2>&1; then
+    echo -e "${MUTED}Installing Watchman...${NC}"
+    brew update
+    brew install watchman
+fi
+
 INSTALL_DIR=$HOME/.local/bin
 mkdir -p "$INSTALL_DIR"
 

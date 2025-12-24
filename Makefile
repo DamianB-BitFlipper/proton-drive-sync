@@ -8,9 +8,9 @@ install:
 build:
 	bun build --compile --minify ./src/index.ts --outfile ./dist/proton-drive-sync
 
-# Run directly with tsx in watch mode (auto-reload on file changes)
+# Run directly with bun in watch mode (auto-reload on file changes)
 dev:
-	PROTON_DEV=1 bun --bun tsx watch src/index.ts $(ARGS)
+	PROTON_DEV=1 bun --watch src/index.ts $(ARGS)
 
 # Run pre-commit checks on all files
 pre-commit:

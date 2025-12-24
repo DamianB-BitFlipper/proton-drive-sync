@@ -29,7 +29,13 @@ import {
 import { FLAGS, setFlag, clearFlag, hasFlag } from '../flags.js';
 import { sendSignal } from '../signals.js';
 import { CONFIG_FILE, CONFIG_CHECK_SIGNAL } from '../config.js';
-import type { DashboardDiff, AuthStatusUpdate, DashboardJob, DashboardStatus } from './server.js';
+import type {
+  DashboardDiff,
+  AuthStatusUpdate,
+  DashboardJob,
+  DashboardStatus,
+  SyncStatus,
+} from './server.js';
 import type { Config } from '../config.js';
 
 // ============================================================================
@@ -60,8 +66,7 @@ const heartbeatEvents = new EventEmitter();
 
 // Current status (for API endpoint)
 let currentAuthStatus: AuthStatusUpdate = { status: 'unauthenticated' };
-let currentIsPaused = false;
-let currentIsSyncing = false;
+let currentSyncStatus: SyncStatus = 'disconnected';
 let currentConfig: Config | null = null;
 
 // Listen for diff events from parent process via IPC
@@ -73,8 +78,7 @@ process.on(
     dryRun?: boolean;
     config?: Config;
     auth?: AuthStatusUpdate;
-    isPaused?: boolean;
-    isSyncing?: boolean;
+    syncStatus?: SyncStatus;
   }) => {
     if (msg.type === 'job_state_diff' && msg.diff) {
       stateDiffEvents.emit('job_state_diff', msg.diff);
@@ -85,16 +89,12 @@ process.on(
       if (msg.auth) {
         currentAuthStatus = msg.auth;
       }
-      if (msg.isPaused !== undefined) {
-        currentIsPaused = msg.isPaused;
-      }
-      if (msg.isSyncing !== undefined) {
-        currentIsSyncing = msg.isSyncing;
+      if (msg.syncStatus !== undefined) {
+        currentSyncStatus = msg.syncStatus;
       }
       statusEvents.emit('status', {
         auth: currentAuthStatus,
-        isPaused: currentIsPaused,
-        isSyncing: currentIsSyncing,
+        syncStatus: currentSyncStatus,
       });
     } else if (msg.type === 'heartbeat') {
       heartbeatEvents.emit('heartbeat');
@@ -184,7 +184,7 @@ function renderProcessingList(jobs: DashboardJob[]): string {
   }
 
   // When paused or not authenticated, show clock icon; when active and authenticated, show spinning refresh icon
-  const isActive = !currentIsPaused && currentAuthStatus.status === 'authenticated';
+  const isActive = currentSyncStatus === 'syncing' && currentAuthStatus.status === 'authenticated';
   const icon = isActive
     ? `<svg class="w-4 h-4 text-blue-500 mt-0.5 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -398,8 +398,8 @@ function renderPausedBadge(isPaused: boolean): string {
 }
 
 /** Render syncing status badge HTML */
-function renderSyncingBadge(isSyncing: boolean): string {
-  if (isSyncing) {
+function renderSyncingBadge(syncStatus: SyncStatus): string {
+  if (syncStatus === 'syncing') {
     return `
 <div class="h-9 flex items-center gap-2 px-3 rounded-full bg-gray-900 border border-green-500/30 bg-green-500/10">
   <div class="relative flex h-2.5 w-2.5">
@@ -409,13 +409,24 @@ function renderSyncingBadge(isSyncing: boolean): string {
   <span class="text-xs font-medium text-green-400">Connected</span>
 </div>`;
   }
-  return `
+  if (syncStatus === 'paused') {
+    return `
 <div class="h-9 flex items-center gap-2 px-3 rounded-full bg-gray-900 border border-amber-500/30 bg-amber-500/10">
   <div class="relative flex h-2.5 w-2.5">
     <span id="heartbeat-ping" class="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-0"></span>
     <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
   </div>
-  <span class="text-xs font-medium text-amber-400">Not Syncing</span>
+  <span class="text-xs font-medium text-amber-400">Paused</span>
+</div>`;
+  }
+  // disconnected
+  return `
+<div class="h-9 flex items-center gap-2 px-3 rounded-full bg-gray-900 border border-red-500/30 bg-red-500/10">
+  <div class="relative flex h-2.5 w-2.5">
+    <span id="heartbeat-ping" class="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-0"></span>
+    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+  </div>
+  <span class="text-xs font-medium text-red-400">Disconnected</span>
 </div>`;
 }
 
@@ -467,7 +478,7 @@ function renderDryRunBanner(dryRun: boolean): string {
 
 /** Render processing box title based on pause state, auth status, and syncing status */
 function renderProcessingTitle(isPaused: boolean): string {
-  if (currentAuthStatus.status !== 'authenticated' || !currentIsSyncing) {
+  if (currentAuthStatus.status !== 'authenticated' || currentSyncStatus !== 'syncing') {
     return `
 <span class="w-2 h-2 rounded-full bg-amber-500"></span>
 Held Transfers
@@ -1032,7 +1043,7 @@ app.get('/api/fragments/config-info', (c) => {
 });
 
 app.get('/api/fragments/pause-button', (c) => {
-  return c.html(renderPauseButton(currentIsPaused));
+  return c.html(renderPauseButton(currentSyncStatus === 'paused'));
 });
 
 app.get('/api/fragments/retry-all-button', (c) => {
@@ -1040,7 +1051,7 @@ app.get('/api/fragments/retry-all-button', (c) => {
 });
 
 app.get('/api/fragments/syncing-status', (c) => {
-  return c.html(renderSyncingBadge(currentIsSyncing));
+  return c.html(renderSyncingBadge(currentSyncStatus));
 });
 
 /** Set onboarded flag */
@@ -1051,20 +1062,21 @@ app.post('/api/onboard', (c) => {
 
 /** Toggle pause state */
 app.post('/api/toggle-pause', (c) => {
-  if (currentIsPaused) {
+  if (currentSyncStatus === 'paused') {
     clearFlag(FLAGS.PAUSED);
-    currentIsPaused = false;
+    currentSyncStatus = 'syncing';
+    sendSignal('resume-sync');
   } else {
     setFlag(FLAGS.PAUSED);
-    currentIsPaused = true;
+    currentSyncStatus = 'paused';
+    sendSignal('pause-sync');
   }
   // Emit status event so all SSE clients get updated
   statusEvents.emit('status', {
     auth: currentAuthStatus,
-    isPaused: currentIsPaused,
-    isSyncing: currentIsSyncing,
+    syncStatus: currentSyncStatus,
   });
-  return c.html(renderPauseButton(currentIsPaused));
+  return c.html(renderPauseButton(currentSyncStatus === 'paused'));
 });
 
 /** Handle signals from dashboard */
@@ -1172,12 +1184,13 @@ app.get('/api/events', async (c) => {
     };
 
     const statusHandler = (status: DashboardStatus) => {
+      const isPaused = status.syncStatus === 'paused';
       // Forward full status: auth, paused badge, syncing badge, pause button, processing title, and heartbeat
       stream.writeSSE({ event: 'auth', data: renderAuthStatus(status.auth) });
-      stream.writeSSE({ event: 'paused', data: renderPausedBadge(status.isPaused) });
-      stream.writeSSE({ event: 'syncing', data: renderSyncingBadge(status.isSyncing) });
-      stream.writeSSE({ event: 'pause-button', data: renderPauseButton(status.isPaused) });
-      stream.writeSSE({ event: 'processing-title', data: renderProcessingTitle(status.isPaused) });
+      stream.writeSSE({ event: 'paused', data: renderPausedBadge(isPaused) });
+      stream.writeSSE({ event: 'syncing', data: renderSyncingBadge(status.syncStatus) });
+      stream.writeSSE({ event: 'pause-button', data: renderPauseButton(isPaused) });
+      stream.writeSSE({ event: 'processing-title', data: renderProcessingTitle(isPaused) });
       // Re-render processing list to update icons based on pause state
       stream.writeSSE({ event: 'processing', data: renderProcessingList(getProcessingJobs()) });
       // Re-render pending list to update spin animation based on pause state
@@ -1200,15 +1213,16 @@ app.get('/api/events', async (c) => {
     const pendingJobs = getPendingJobs(50);
     const recentJobs = getRecentJobs(50);
     const retryJobs = getRetryJobs(50);
+    const isPaused = currentSyncStatus === 'paused';
 
     await stream.writeSSE({ event: 'stats', data: renderStats(counts) });
     await stream.writeSSE({ event: 'auth', data: renderAuthStatus(currentAuthStatus) });
-    await stream.writeSSE({ event: 'paused', data: renderPausedBadge(currentIsPaused) });
-    await stream.writeSSE({ event: 'syncing', data: renderSyncingBadge(currentIsSyncing) });
-    await stream.writeSSE({ event: 'pause-button', data: renderPauseButton(currentIsPaused) });
+    await stream.writeSSE({ event: 'paused', data: renderPausedBadge(isPaused) });
+    await stream.writeSSE({ event: 'syncing', data: renderSyncingBadge(currentSyncStatus) });
+    await stream.writeSSE({ event: 'pause-button', data: renderPauseButton(isPaused) });
     await stream.writeSSE({
       event: 'processing-title',
-      data: renderProcessingTitle(currentIsPaused),
+      data: renderProcessingTitle(isPaused),
     });
     await stream.writeSSE({ event: 'processing', data: renderProcessingList(processingJobs) });
     await stream.writeSSE({ event: 'processing-count', data: `${processingJobs.length} items` });

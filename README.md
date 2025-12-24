@@ -1,12 +1,15 @@
 # Proton Drive Sync
 
-A CLI tool that watches local directories and syncs changes to Proton Drive in real-time using Facebook's Watchman.
+Sync local directories to Proton Drive. Runs as a background service with a web dashboard, automatically uploading changes as they happen.
+
+![Dashboard](readme_assets/home.png)
 
 ## Getting Started
 
 ### Requirements
 
-- [Watchman](https://facebook.github.io/watchman/docs/install)
+- macOS (Linux/Windows not yet supported — [open an issue](https://github.com/damianb-bitflipper/proton-drive-sync/issues) to register interest)
+- [Homebrew](https://brew.sh)
 
 ### Installation
 
@@ -84,50 +87,4 @@ proton-drive-sync service uninstall
 
 ## Development
 
-```bash
-git clone https://github.com/damianb-bitflipper/proton-drive-sync
-cd proton-drive-sync
-make install
-bun link --global
-```
-
-### Make Commands
-
-| Command           | Description                               |
-| ----------------- | ----------------------------------------- |
-| `make install`    | Install dependencies                      |
-| `make build`      | Build the project                         |
-| `make dev ARGS=…` | Run directly with tsx (no build required) |
-| `make pre-commit` | Run lint and format on all files          |
-| `make publish`    | Build and publish to npm                  |
-| `make clean`      | Remove build artifacts                    |
-
-Run directly with tsx (no build step required):
-
-```bash
-make dev ARGS="start"
-```
-
-> **Note:** In dev mode, use `Ctrl+C` to stop the process. The `proton-drive-sync stop` command does not work with `make dev` because `tsx watch` keeps the process alive.
-
-Or rebuild after changes:
-
-```bash
-make build
-proton-drive-sync start
-```
-
-## Publishing
-
-To publish a new version to npm:
-
-```bash
-# Login to npm (if not already logged in)
-bun login
-
-# Build the package
-bun run build
-
-# Publish to npm
-bun publish
-```
+See [DEVELOPMENT.md](DEVELOPMENT.md) for development setup and contributing guidelines.

@@ -214,12 +214,12 @@ function startJobProcessorLoop(client: ProtonDriveClient, dryRun: boolean): Proc
     if (!running) return;
 
     // Send heartbeat to dashboard to indicate sync loop is alive
-    sendSyncHeartbeat();
+    sendSyncHeartbeat(paused);
 
     if (paused) {
-      // When paused, just reschedule without processing
+      // When paused, poll every second to stay responsive
       if (running) {
-        timeoutId = setTimeout(processLoop, JOB_POLL_INTERVAL_MS);
+        timeoutId = setTimeout(processLoop, 1000);
       }
       return;
     }

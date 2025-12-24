@@ -11,7 +11,6 @@ import { fileURLToPath } from 'url';
 import { watch } from 'fs';
 import { jobEvents, type JobEvent } from '../sync/queue.js';
 import { logger } from '../logger.js';
-import { isPaused } from '../flags.js';
 import type { Config } from '../config.js';
 
 // ============================================================================
@@ -35,11 +34,13 @@ export interface AuthStatusUpdate {
   username?: string;
 }
 
+/** Sync status enum for three-state badge */
+export type SyncStatus = 'syncing' | 'paused' | 'disconnected';
+
 /** Status struct sent on every heartbeat to the dashboard */
 export interface DashboardStatus {
   auth: AuthStatusUpdate;
-  isPaused: boolean;
-  isSyncing: boolean;
+  syncStatus: SyncStatus;
 }
 
 // ============================================================================
@@ -169,10 +170,10 @@ let currentConfig: Config | null = null;
 let currentDryRun = false;
 let currentAuthStatus: AuthStatusUpdate = { status: 'unauthenticated' };
 let lastSentStatus: DashboardStatus | null = null;
-let isSyncing = false;
 let lastSyncHeartbeat: number = 0;
+let lastPausedState = false;
 
-// How long to wait before considering sync loop dead (3x JOB_POLL_INTERVAL_MS of 10s)
+// How long to wait before considering sync loop dead (30 seconds)
 const SYNC_HEARTBEAT_TIMEOUT_MS = 30_000;
 
 // Heartbeat interval (1.5 seconds) - checks for status changes
@@ -197,12 +198,12 @@ export function startDashboard(config: Config, dryRun = false): void {
   const isDevMode = process.env.PROTON_DEV === '1';
 
   // Fork the dashboard subprocess
-  // In dev mode, use tsx to run the TypeScript source directly for hot reload
+  // In dev mode, use bun to run the TypeScript source directly for hot reload
   if (isDevMode) {
     const appPath = join(__dirname, 'app.ts');
     dashboardProcess = fork(appPath, [], {
       stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-      execArgv: ['--import', 'tsx'],
+      execPath: 'bun',
     });
   } else {
     const appPath = join(__dirname, 'app.js');
@@ -390,13 +391,14 @@ export function sendAuthStatus(update: AuthStatusUpdate): void {
  * Signal that the sync process loop is alive.
  * Called periodically from engine.ts processLoop.
  */
-export function sendSyncHeartbeat(): void {
-  isSyncing = true;
+export function sendSyncHeartbeat(paused: boolean): void {
   lastSyncHeartbeat = Date.now();
+  lastPausedState = paused;
+  sendStatusToDashboard();
 }
 
 /**
- * Send current status (auth + isPaused) to the dashboard subprocess.
+ * Send current status (auth + syncStatus) to the dashboard subprocess.
  * Always sends a heartbeat, but only includes status data if changed.
  * Called on heartbeat interval and when auth status changes.
  * @param force - If true, send status even if it hasn't changed (used for initial send)
@@ -404,13 +406,20 @@ export function sendSyncHeartbeat(): void {
 function sendStatusToDashboard(force = false): void {
   if (!dashboardProcess?.connected) return;
 
-  // Check if sync heartbeat is stale
-  const syncActive = Date.now() - lastSyncHeartbeat < SYNC_HEARTBEAT_TIMEOUT_MS;
+  // Determine sync status
+  const heartbeatRecent = Date.now() - lastSyncHeartbeat < SYNC_HEARTBEAT_TIMEOUT_MS;
+  let syncStatus: SyncStatus;
+  if (!heartbeatRecent) {
+    syncStatus = 'disconnected';
+  } else if (lastPausedState) {
+    syncStatus = 'paused';
+  } else {
+    syncStatus = 'syncing';
+  }
 
   const status: DashboardStatus = {
     auth: currentAuthStatus,
-    isPaused: isPaused(),
-    isSyncing: isSyncing && syncActive,
+    syncStatus,
   };
 
   // Helper to safely get username from auth status
@@ -421,8 +430,7 @@ function sendStatusToDashboard(force = false): void {
   const hasChanged =
     force ||
     !lastSentStatus ||
-    lastSentStatus.isPaused !== status.isPaused ||
-    lastSentStatus.isSyncing !== status.isSyncing ||
+    lastSentStatus.syncStatus !== status.syncStatus ||
     lastSentStatus.auth.status !== status.auth.status ||
     getUsername(lastSentStatus.auth) !== getUsername(status.auth);
 
