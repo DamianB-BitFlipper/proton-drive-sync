@@ -167,7 +167,7 @@ export async function runWatchMode(options: SyncOptions): Promise<void> {
 
   // Cleanup
   processorHandle.stop();
-  stopDashboard();
+  await stopDashboard();
   closeWatchman();
 }
 

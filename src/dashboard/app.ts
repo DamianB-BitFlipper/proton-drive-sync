@@ -177,31 +177,45 @@ function renderStats(counts: {
 </div>`;
 }
 
-/** Render processing jobs list HTML */
-function renderProcessingList(jobs: DashboardJob[]): string {
-  if (jobs.length === 0) {
-    return `
+/** Render processing queue HTML (header + list) */
+function renderProcessingQueue(jobs: DashboardJob[]): string {
+  const isPaused = currentSyncStatus === 'paused';
+
+  const header = `
+<div class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl">
+  <h2 id="processing-title" class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2" sse-swap="processing-title" hx-swap="innerHTML">
+    <span class="w-2 h-2 rounded-full ${isPaused ? 'bg-amber-500' : 'bg-blue-500 animate-pulse'}"></span>
+    ${isPaused ? 'Paused' : 'Active Transfers'}
+  </h2>
+  <div class="flex items-center gap-3">
+    <div id="pause-button" hx-get="/api/fragments/pause-button" hx-trigger="load" hx-swap="innerHTML" sse-swap="pause-button"></div>
+    <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
+  </div>
+</div>`;
+
+  const listContent =
+    jobs.length === 0
+      ? `
 <div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2">
   <svg class="w-10 h-10 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
   </svg>
   <p class="text-sm">Queue is empty</p>
-</div>`;
-  }
+</div>`
+      : (() => {
+          const isActive =
+            currentSyncStatus === 'syncing' && currentAuthStatus.status === 'authenticated';
+          const icon = isActive
+            ? `<svg class="w-4 h-4 text-blue-500 mt-0.5 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>`
+            : `<svg class="w-4 h-4 text-amber-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>`;
 
-  // When paused or not authenticated, show clock icon; when active and authenticated, show spinning refresh icon
-  const isActive = currentSyncStatus === 'syncing' && currentAuthStatus.status === 'authenticated';
-  const icon = isActive
-    ? `<svg class="w-4 h-4 text-blue-500 mt-0.5 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-      </svg>`
-    : `<svg class="w-4 h-4 text-amber-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>`;
-
-  return `<div class="space-y-1">${jobs
-    .map(
-      (job) => `
+          return `<div class="space-y-1">${jobs
+            .map(
+              (job) => `
 <div class="px-3 py-2.5 rounded-lg bg-gray-900/50 border border-gray-700/50 hover:border-blue-500/30 transition-colors group">
   <div class="flex items-start gap-3">
     ${icon}
@@ -211,25 +225,38 @@ function renderProcessingList(jobs: DashboardJob[]): string {
     </div>
   </div>
 </div>`
-    )
-    .join('')}</div>`;
+            )
+            .join('')}</div>`;
+        })();
+
+  const list = `<div class="flex-1 overflow-y-auto custom-scrollbar p-2">${listContent}</div>`;
+
+  return header + list;
 }
 
-/** Render blocked jobs list HTML */
-function renderBlockedList(jobs: DashboardJob[]): string {
-  if (jobs.length === 0) {
-    return `
+/** Render blocked queue HTML (header + list) */
+function renderBlockedQueue(jobs: DashboardJob[]): string {
+  const header = `
+<div class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl">
+  <h2 class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2">
+    <span class="w-2 h-2 rounded-full bg-red-500"></span>
+    Failed Transfers
+  </h2>
+  <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
+</div>`;
+
+  const listContent =
+    jobs.length === 0
+      ? `
 <div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2">
   <svg class="w-10 h-10 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
   <p class="text-sm">All systems nominal</p>
-</div>`;
-  }
-
-  return `<div class="space-y-1">${jobs
-    .map(
-      (job) => `
+</div>`
+      : `<div class="space-y-1">${jobs
+          .map(
+            (job) => `
 <div class="px-3 py-2.5 rounded-lg bg-red-500/5 border border-red-500/20 hover:bg-red-500/10 transition-colors group">
   <div class="flex items-start gap-3">
     <svg class="w-4 h-4 text-red-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -244,22 +271,34 @@ function renderBlockedList(jobs: DashboardJob[]): string {
     </div>
   </div>
 </div>`
-    )
-    .join('')}</div>`;
+          )
+          .join('')}</div>`;
+
+  const list = `<div class="flex-1 overflow-y-auto custom-scrollbar p-2">${listContent}</div>`;
+
+  return header + list;
 }
 
-/** Render recent jobs list HTML */
-function renderRecentList(jobs: DashboardJob[]): string {
-  if (jobs.length === 0) {
-    return `
+/** Render recent queue HTML (header + list) */
+function renderRecentQueue(jobs: DashboardJob[]): string {
+  const header = `
+<div class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl">
+  <h2 class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2">
+    <span class="w-2 h-2 rounded-full bg-green-500"></span>
+    Recently Synced
+  </h2>
+  <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
+</div>`;
+
+  const listContent =
+    jobs.length === 0
+      ? `
 <div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2">
   <p class="text-sm">No recent activity</p>
-</div>`;
-  }
-
-  return `<div class="space-y-1">${jobs
-    .map(
-      (job) => `
+</div>`
+      : `<div class="space-y-1">${jobs
+          .map(
+            (job) => `
 <div class="px-3 py-2 rounded-lg hover:bg-gray-700/50 transition-colors flex items-center gap-3">
   <svg class="w-4 h-4 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
@@ -269,22 +308,34 @@ function renderRecentList(jobs: DashboardJob[]): string {
     <span class="text-[10px] text-gray-500 font-mono whitespace-nowrap">${formatTime(job.createdAt)}</span>
   </div>
 </div>`
-    )
-    .join('')}</div>`;
+          )
+          .join('')}</div>`;
+
+  const list = `<div class="flex-1 overflow-y-auto custom-scrollbar p-2">${listContent}</div>`;
+
+  return header + list;
 }
 
-/** Render pending jobs list HTML */
-function renderPendingList(jobs: DashboardJob[]): string {
-  if (jobs.length === 0) {
-    return `
+/** Render pending queue HTML (header + list) */
+function renderPendingQueue(jobs: DashboardJob[]): string {
+  const header = `
+<div class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl">
+  <h2 class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2">
+    <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+    Pending
+  </h2>
+  <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
+</div>`;
+
+  const listContent =
+    jobs.length === 0
+      ? `
 <div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2">
   <p class="text-sm">Queue empty</p>
-</div>`;
-  }
-
-  return `<div class="space-y-1">${jobs
-    .map(
-      (job) => `
+</div>`
+      : `<div class="space-y-1">${jobs
+          .map(
+            (job) => `
 <div class="px-3 py-2 rounded-lg hover:bg-gray-700/50 transition-colors flex items-center gap-3">
   <svg class="w-4 h-4 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -293,8 +344,12 @@ function renderPendingList(jobs: DashboardJob[]): string {
     <span class="text-xs font-mono text-gray-300 truncate block">${escapeHtml(formatPath(job.localPath))}</span>
   </div>
 </div>`
-    )
-    .join('')}</div>`;
+          )
+          .join('')}</div>`;
+
+  const list = `<div class="flex-1 overflow-y-auto custom-scrollbar p-2">${listContent}</div>`;
+
+  return header + list;
 }
 
 /** Render retry queue HTML (header with button + list) */
@@ -658,13 +713,17 @@ const HOME_PAGE_SCRIPTS = `
       if (diffMs <= 0) {
         el.textContent = 'now';
       } else {
-        const secs = Math.ceil(diffMs / 1000);
-        if (secs >= 60) {
-          const mins = Math.floor(secs / 60);
-          el.textContent = 'in ' + mins + 'm ' + (secs % 60) + 's';
-        } else {
-          el.textContent = 'in ' + secs + 's';
-        }
+        const totalSecs = Math.ceil(diffMs / 1000);
+        const days = Math.floor(totalSecs / 86400);
+        const hours = Math.floor((totalSecs % 86400) / 3600);
+        const mins = Math.floor((totalSecs % 3600) / 60);
+        const secs = totalSecs % 60;
+        let text = 'in ';
+        if (days > 0) text += days + 'd ';
+        if (hours > 0) text += hours + 'h ';
+        if (mins > 0) text += mins + 'm ';
+        if (secs > 0 || totalSecs === 0) text += secs + 's';
+        el.textContent = text.trim();
       }
     });
   }
@@ -842,13 +901,11 @@ const SETTINGS_PAGE_SCRIPTS = `
 
   async function saveConfig() {
     const saveButton = document.getElementById('save-button');
-    const saveStatus = document.getElementById('save-status');
 
     // Validate
     const validDirs = syncDirs.filter((d) => d.source_path.trim());
     if (validDirs.length === 0) {
-      saveStatus.textContent = 'At least one sync directory is required';
-      saveStatus.className = 'text-sm text-red-400';
+      showToast('At least one sync directory is required', 'error', 5000);
       return;
     }
 
@@ -861,8 +918,6 @@ const SETTINGS_PAGE_SCRIPTS = `
     };
 
     saveButton.disabled = true;
-    saveStatus.textContent = 'Saving...';
-    saveStatus.className = 'text-sm text-gray-400';
 
     try {
       const response = await fetch('/api/config', {
@@ -874,8 +929,7 @@ const SETTINGS_PAGE_SCRIPTS = `
       const result = await response.json();
 
       if (result.success) {
-        saveStatus.textContent = 'Saved successfully!';
-        saveStatus.className = 'text-sm text-green-400';
+        showToast('Settings saved successfully!', 'success');
         // Redirect to about page after successful save only during onboarding
         if (redirectAfterSave) {
           window.location.href = redirectAfterSave;
@@ -885,17 +939,12 @@ const SETTINGS_PAGE_SCRIPTS = `
           renderSyncDirs();
         }
       } else {
-        saveStatus.textContent = result.error || 'Failed to save';
-        saveStatus.className = 'text-sm text-red-400';
+        showToast(result.error || 'Failed to save settings', 'error', 5000);
       }
     } catch (err) {
-      saveStatus.textContent = 'Error saving config';
-      saveStatus.className = 'text-sm text-red-400';
+      showToast('Error saving settings', 'error', 5000);
     } finally {
       saveButton.disabled = false;
-      setTimeout(() => {
-        saveStatus.textContent = '';
-      }, 3000);
     }
   }
 
@@ -1063,38 +1112,22 @@ app.get('/api/fragments/stats', (c) => {
   return c.html(renderStats(getJobCounts()));
 });
 
-app.get('/api/fragments/processing', (c) => {
-  return c.html(renderProcessingList(getProcessingJobs()));
+app.get('/api/fragments/processing-queue', (c) => {
+  return c.html(renderProcessingQueue(getProcessingJobs()));
 });
 
-app.get('/api/fragments/processing-count', (c) => {
-  return c.html(`${getProcessingJobs().length} items`);
+app.get('/api/fragments/blocked-queue', (c) => {
+  return c.html(renderBlockedQueue(getBlockedJobs()));
 });
 
-app.get('/api/fragments/blocked', (c) => {
-  return c.html(renderBlockedList(getBlockedJobs()));
-});
-
-app.get('/api/fragments/blocked-count', (c) => {
-  return c.html(`${getBlockedJobs().length} items`);
-});
-
-app.get('/api/fragments/recent', (c) => {
+app.get('/api/fragments/recent-queue', (c) => {
   const limit = parseInt(c.req.query('limit') || '50', 10);
-  return c.html(renderRecentList(getRecentJobs(limit)));
+  return c.html(renderRecentQueue(getRecentJobs(limit)));
 });
 
-app.get('/api/fragments/recent-count', (c) => {
-  return c.html(`${getRecentJobs(50).length} items`);
-});
-
-app.get('/api/fragments/pending', (c) => {
+app.get('/api/fragments/pending-queue', (c) => {
   const limit = parseInt(c.req.query('limit') || '50', 10);
-  return c.html(renderPendingList(getPendingJobs(limit)));
-});
-
-app.get('/api/fragments/pending-count', (c) => {
-  return c.html(`${getPendingJobs(50).length} items`);
+  return c.html(renderPendingQueue(getPendingJobs(limit)));
 });
 
 app.get('/api/fragments/retry-queue', (c) => {
@@ -1263,14 +1296,13 @@ app.get('/api/events', async (c) => {
       // On any state change, send updated HTML fragments
       const counts = getJobCounts();
       stream.writeSSE({ event: 'stats', data: renderStats(counts) });
-      stream.writeSSE({ event: 'processing', data: renderProcessingList(getProcessingJobs()) });
-      stream.writeSSE({ event: 'processing-count', data: `${getProcessingJobs().length} items` });
-      stream.writeSSE({ event: 'blocked', data: renderBlockedList(getBlockedJobs()) });
-      stream.writeSSE({ event: 'blocked-count', data: `${getBlockedJobs().length} items` });
-      stream.writeSSE({ event: 'pending', data: renderPendingList(getPendingJobs(50)) });
-      stream.writeSSE({ event: 'pending-count', data: `${getPendingJobs(50).length} items` });
-      stream.writeSSE({ event: 'recent', data: renderRecentList(getRecentJobs(50)) });
-      stream.writeSSE({ event: 'recent-count', data: `${getRecentJobs(50).length} items` });
+      stream.writeSSE({
+        event: 'processing-queue',
+        data: renderProcessingQueue(getProcessingJobs()),
+      });
+      stream.writeSSE({ event: 'blocked-queue', data: renderBlockedQueue(getBlockedJobs()) });
+      stream.writeSSE({ event: 'pending-queue', data: renderPendingQueue(getPendingJobs(50)) });
+      stream.writeSSE({ event: 'recent-queue', data: renderRecentQueue(getRecentJobs(50)) });
       stream.writeSSE({ event: 'retry-queue', data: renderRetryQueue(getRetryJobs(50)) });
     };
 
@@ -1282,10 +1314,12 @@ app.get('/api/events', async (c) => {
       stream.writeSSE({ event: 'syncing', data: renderSyncingBadge(status.syncStatus) });
       stream.writeSSE({ event: 'pause-button', data: renderPauseButton(status.syncStatus) });
       stream.writeSSE({ event: 'processing-title', data: renderProcessingTitle(isPaused) });
-      // Re-render processing list to update icons based on pause state
-      stream.writeSSE({ event: 'processing', data: renderProcessingList(getProcessingJobs()) });
-      // Re-render pending list to update spin animation based on pause state
-      stream.writeSSE({ event: 'pending', data: renderPendingList(getPendingJobs(50)) });
+      // Re-render processing and pending queues to update icons based on pause state
+      stream.writeSSE({
+        event: 'processing-queue',
+        data: renderProcessingQueue(getProcessingJobs()),
+      });
+      stream.writeSSE({ event: 'pending-queue', data: renderPendingQueue(getPendingJobs(50)) });
       stream.writeSSE({ event: 'heartbeat', data: '' });
     };
 
@@ -1315,14 +1349,13 @@ app.get('/api/events', async (c) => {
       event: 'processing-title',
       data: renderProcessingTitle(isPaused),
     });
-    await stream.writeSSE({ event: 'processing', data: renderProcessingList(processingJobs) });
-    await stream.writeSSE({ event: 'processing-count', data: `${processingJobs.length} items` });
-    await stream.writeSSE({ event: 'blocked', data: renderBlockedList(blockedJobs) });
-    await stream.writeSSE({ event: 'blocked-count', data: `${blockedJobs.length} items` });
-    await stream.writeSSE({ event: 'pending', data: renderPendingList(pendingJobs) });
-    await stream.writeSSE({ event: 'pending-count', data: `${pendingJobs.length} items` });
-    await stream.writeSSE({ event: 'recent', data: renderRecentList(recentJobs) });
-    await stream.writeSSE({ event: 'recent-count', data: `${recentJobs.length} items` });
+    await stream.writeSSE({
+      event: 'processing-queue',
+      data: renderProcessingQueue(processingJobs),
+    });
+    await stream.writeSSE({ event: 'blocked-queue', data: renderBlockedQueue(blockedJobs) });
+    await stream.writeSSE({ event: 'pending-queue', data: renderPendingQueue(pendingJobs) });
+    await stream.writeSSE({ event: 'recent-queue', data: renderRecentQueue(recentJobs) });
     await stream.writeSSE({ event: 'retry-queue', data: renderRetryQueue(retryJobs) });
 
     // Cleanup on close
@@ -1435,23 +1468,20 @@ server.on('listening', () => {
 
 // Exit if parent process dies (IPC channel closes)
 process.on('disconnect', () => {
-  server.close();
-  process.exit(0);
+  server.close(() => process.exit(0));
 });
 
 // Handle EPIPE errors from IPC when parent exits unexpectedly
-process.on('error', () => {
-  server.close();
-  process.exit(0);
+process.on('error', (err) => {
+  console.error('Dashboard process error:', err);
+  server.close(() => process.exit(0));
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  server.close();
-  process.exit(0);
+  server.close(() => process.exit(0));
 });
 
 process.on('SIGINT', () => {
-  server.close();
-  process.exit(0);
+  server.close(() => process.exit(0));
 });

@@ -277,8 +277,9 @@ export function startDashboard(config: Config, dryRun = false): void {
 
 /**
  * Stop the dashboard process.
+ * Waits for the process to exit gracefully, with a timeout fallback to SIGKILL.
  */
-export function stopDashboard(): void {
+export async function stopDashboard(): Promise<void> {
   // Stop heartbeat
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval);
@@ -297,9 +298,26 @@ export function stopDashboard(): void {
       jobEventHandler = null;
     }
 
-    // Gracefully terminate the child process
-    dashboardProcess.kill('SIGTERM');
+    const proc = dashboardProcess;
     dashboardProcess = null;
+
+    // Wait for process to exit with timeout
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        logger.warn('Dashboard process did not exit gracefully, sending SIGKILL');
+        proc.kill('SIGKILL');
+        resolve();
+      }, 2000);
+
+      proc.once('exit', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+
+      // Gracefully terminate the child process
+      proc.kill('SIGTERM');
+    });
+
     logger.debug('Dashboard process stopped');
   }
 }
@@ -341,8 +359,9 @@ function setupHotReload(): void {
 
 /**
  * Restart the dashboard subprocess (used for hot reload).
+ * Waits for the old process to exit before spawning a new one.
  */
-function restartDashboard(): void {
+async function restartDashboard(): Promise<void> {
   if (!currentConfig) return;
 
   // Stop heartbeat
@@ -354,26 +373,40 @@ function restartDashboard(): void {
   // Reset last sent status so initial status is sent on restart
   lastSentStatus = null;
 
-  // Stop current process
+  // Stop current process and wait for it to exit
   if (dashboardProcess) {
     if (jobEventHandler) {
       jobEvents.off('job', jobEventHandler);
       jobEventHandler = null;
     }
-    dashboardProcess.kill('SIGTERM');
+
+    const proc = dashboardProcess;
     dashboardProcess = null;
+
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        logger.warn('Dashboard process did not exit gracefully during restart, sending SIGKILL');
+        proc.kill('SIGKILL');
+        resolve();
+      }, 2000);
+
+      proc.once('exit', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+
+      proc.kill('SIGTERM');
+    });
   }
 
-  // Wait a bit for the process to terminate, then restart
-  setTimeout(() => {
-    if (currentConfig) {
-      // Temporarily clear fileWatcher to avoid re-setting up
-      const savedWatcher = fileWatcher;
-      fileWatcher = null;
-      startDashboard(currentConfig, currentDryRun);
-      fileWatcher = savedWatcher;
-    }
-  }, 100);
+  // Now safe to restart
+  if (currentConfig) {
+    // Temporarily clear fileWatcher to avoid re-setting up
+    const savedWatcher = fileWatcher;
+    fileWatcher = null;
+    startDashboard(currentConfig, currentDryRun);
+    fileWatcher = savedWatcher;
+  }
 }
 
 /**

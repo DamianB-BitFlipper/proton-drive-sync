@@ -32,31 +32,12 @@
     <!-- Pending Transfers -->
     <div class="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[400px]">
       <div
-        class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl"
-      >
-        <h2
-          class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2"
-        >
-          <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-          Pending
-        </h2>
-        <span
-          id="pending-count"
-          class="text-xs font-mono text-gray-500"
-          hx-get="/api/fragments/pending-count"
-          hx-trigger="load"
-          hx-swap="innerHTML"
-          sse-swap="pending-count"
-          >0 items</span
-        >
-      </div>
-      <div
-        id="pending-list"
-        class="flex-1 overflow-y-auto custom-scrollbar p-2"
-        hx-get="/api/fragments/pending"
+        id="pending-queue"
+        class="flex flex-col h-full"
+        hx-get="/api/fragments/pending-queue"
         hx-trigger="load"
         hx-swap="innerHTML"
-        sse-swap="pending"
+        sse-swap="pending-queue"
       >
         <div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2">
           <p class="text-sm">Loading...</p>
@@ -67,44 +48,12 @@
     <!-- Active Processing -->
     <div class="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[400px]">
       <div
-        class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl"
-      >
-        <h2
-          id="processing-title"
-          class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2"
-          sse-swap="processing-title"
-          hx-swap="innerHTML"
-        >
-          <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-          Active Transfers
-        </h2>
-        <div class="flex items-center gap-3">
-          <!-- Pause/Resume Button -->
-          <div
-            id="pause-button"
-            hx-get="/api/fragments/pause-button"
-            hx-trigger="load"
-            hx-swap="innerHTML"
-            sse-swap="pause-button"
-          ></div>
-          <span
-            id="processing-count"
-            class="text-xs font-mono text-gray-500"
-            hx-get="/api/fragments/processing-count"
-            hx-trigger="load"
-            hx-swap="innerHTML"
-            sse-swap="processing-count"
-            >0 items</span
-          >
-        </div>
-      </div>
-      <div
-        id="processing-list"
-        class="flex-1 overflow-y-auto custom-scrollbar p-2"
-        hx-get="/api/fragments/processing"
+        id="processing-queue"
+        class="flex flex-col h-full"
+        hx-get="/api/fragments/processing-queue"
         hx-trigger="load"
-        hx-swap="morph:innerHTML"
-        sse-swap="processing"
+        hx-swap="innerHTML"
+        sse-swap="processing-queue"
       >
         <div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2">
           <i data-lucide="loader-2" class="w-10 h-10 opacity-20 animate-spin"></i>
@@ -119,31 +68,12 @@
     <!-- Recently Synced -->
     <div class="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[300px]">
       <div
-        class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl"
-      >
-        <h2
-          class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2"
-        >
-          <span class="w-2 h-2 rounded-full bg-green-500"></span>
-          Recently Synced
-        </h2>
-        <span
-          id="recent-count"
-          class="text-xs font-mono text-gray-500"
-          hx-get="/api/fragments/recent-count"
-          hx-trigger="load"
-          hx-swap="innerHTML"
-          sse-swap="recent-count"
-          >0 items</span
-        >
-      </div>
-      <div
-        id="recent-list"
-        class="flex-1 overflow-y-auto custom-scrollbar p-2"
-        hx-get="/api/fragments/recent"
+        id="recent-queue"
+        class="flex flex-col h-full"
+        hx-get="/api/fragments/recent-queue"
         hx-trigger="load"
-        hx-swap="morph:innerHTML"
-        sse-swap="recent"
+        hx-swap="innerHTML"
+        sse-swap="recent-queue"
       >
         <div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2">
           <p class="text-sm">Loading...</p>
@@ -170,31 +100,12 @@
     <!-- Blocked Jobs -->
     <div class="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[300px]">
       <div
-        class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl"
-      >
-        <h2
-          class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2"
-        >
-          <span class="w-2 h-2 rounded-full bg-red-500"></span>
-          Failed Transfers
-        </h2>
-        <span
-          id="blocked-count"
-          class="text-xs font-mono text-gray-500"
-          hx-get="/api/fragments/blocked-count"
-          hx-trigger="load"
-          hx-swap="innerHTML"
-          sse-swap="blocked-count"
-          >0 items</span
-        >
-      </div>
-      <div
-        id="blocked-list"
-        class="flex-1 overflow-y-auto custom-scrollbar p-2"
-        hx-get="/api/fragments/blocked"
+        id="blocked-queue"
+        class="flex flex-col h-full"
+        hx-get="/api/fragments/blocked-queue"
         hx-trigger="load"
-        hx-swap="morph:innerHTML"
-        sse-swap="blocked"
+        hx-swap="innerHTML"
+        sse-swap="blocked-queue"
       >
         <div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-2">
           <i data-lucide="loader-2" class="w-10 h-10 opacity-20 animate-spin"></i>

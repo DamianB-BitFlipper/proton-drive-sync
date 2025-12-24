@@ -395,7 +395,11 @@ export function setJobError(jobId: number, error: string, dryRun: boolean): void
 export function categorizeError(error: string): ErrorClassification {
   const lowerError = error.toLowerCase();
 
-  if (lowerError.includes('draft revision already exists')) {
+  // Proton API conflict errors - delete and recreate after max retries
+  if (
+    lowerError.includes('draft revision already exists') ||
+    lowerError.includes('a file or folder with that name already exists')
+  ) {
     return {
       category: ErrorCategory.REUPLOAD_NEEDED,
       maxRetries: MAX_RETRIES[ErrorCategory.REUPLOAD_NEEDED],

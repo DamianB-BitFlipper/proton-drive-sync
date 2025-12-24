@@ -150,8 +150,8 @@ export async function startCommand(options: StartOptions): Promise<void> {
   watchConfig();
 
   // Set up cleanup handler
-  const cleanup = (): void => {
-    stopDashboard();
+  const cleanup = async (): Promise<void> => {
+    await stopDashboard();
     stopSignalListener();
     releaseRunLock();
   };
@@ -159,15 +159,13 @@ export async function startCommand(options: StartOptions): Promise<void> {
   // Handle Ctrl+C early (before auth) to ensure cleanup
   process.once('SIGINT', () => {
     logger.info('Interrupted');
-    cleanup();
-    process.exit(0);
+    cleanup().then(() => process.exit(0));
   });
 
   // Handle stop signal
   registerSignalHandler('stop', () => {
     logger.info('Stop signal received');
-    cleanup();
-    process.exit(0);
+    cleanup().then(() => process.exit(0));
   });
 
   // Start dashboard early (before auth) so user can see auth status
