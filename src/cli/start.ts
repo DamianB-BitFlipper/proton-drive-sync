@@ -87,9 +87,7 @@ async function authenticateWithStatus(sdkDebug = false): Promise<ProtonDriveClie
  */
 export async function startCommand(options: StartOptions): Promise<void> {
   // Derive effective modes from flags
-  // Default (no flags): daemon mode with watch (like old --daemon --watch)
   const watch = !options.noWatch;
-  const daemon = !options.noDaemon;
 
   // Validate: --no-watch requires --no-daemon
   if (options.noWatch && !options.noDaemon) {
@@ -106,8 +104,8 @@ export async function startCommand(options: StartOptions): Promise<void> {
     if (level >= 2) logger.debug(`Debug level ${level}: SDK debug enabled`);
   }
 
-  // Handle daemon mode (disable console logging)
-  if (daemon) {
+  // Disable console logging when not connected to a TTY (running as background service)
+  if (!process.stdout.isTTY) {
     disableConsoleLogging();
   }
 

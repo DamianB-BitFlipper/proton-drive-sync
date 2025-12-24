@@ -131,16 +131,13 @@ export async function traverseRemotePath(
     const node = await findNodeByName(client, currentFolderUid, folderName);
 
     if (!node) {
-      console.log(`  Path component "${folderName}" not found.`);
       return null;
     }
 
     if (node.type !== 'folder') {
-      console.log(`  Path component "${folderName}" is not a folder.`);
       return null;
     }
 
-    console.log(`  Found folder: ${folderName}`);
     currentFolderUid = node.uid;
   }
 
