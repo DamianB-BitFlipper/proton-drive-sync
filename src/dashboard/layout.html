@@ -333,6 +333,11 @@
 
       // Initialize Lucide icons
       lucide.createIcons();
+
+      // Reinitialize Lucide icons after HTMX swaps in new content
+      document.body.addEventListener('htmx:afterSwap', () => {
+        lucide.createIcons();
+      });
     </script>
     {{PAGE_SCRIPTS}}
   </body>

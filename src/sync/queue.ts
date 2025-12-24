@@ -483,7 +483,11 @@ export function scheduleRetry(
     timestamp: new Date(),
   } satisfies JobEvent);
 
-  logger.info(`Job ${jobId} scheduled for retry in ${Math.round(delaySec)}s`);
+  const maxRetries = MAX_RETRIES[errorCategory];
+  const maxDisplay = maxRetries === Infinity ? '∞' : maxRetries;
+  logger.info(
+    `Job ${jobId} scheduled for retry ${newRetries}/${maxDisplay} in ${Math.round(delaySec)}s`
+  );
 }
 
 // ============================================================================

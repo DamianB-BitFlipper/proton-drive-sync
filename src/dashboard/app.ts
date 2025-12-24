@@ -75,6 +75,7 @@ const heartbeatEvents = new EventEmitter();
 let currentAuthStatus: AuthStatusUpdate = { status: 'unauthenticated' };
 let currentSyncStatus: SyncStatus = 'disconnected';
 let currentConfig: Config | null = null;
+let loggedAuthUser: string | null = null; // Track logged auth to avoid duplicate logs
 
 // Listen for diff events from parent process via IPC
 process.on(
@@ -450,7 +451,10 @@ function renderAuthStatus(auth: AuthStatusUpdate): string {
   if (auth.status === 'authenticated') {
     const label = auth.username ? `${auth.username}@proton.me` : 'Logged in';
     statusConfig.authenticated.label = label;
-    logger.info(`Authenticated. Authenticated as ${label}`);
+    if (loggedAuthUser !== label) {
+      loggedAuthUser = label;
+      logger.info(`Authenticated as ${label}`);
+    }
   }
 
   const config = statusConfig[auth.status] || statusConfig.unauthenticated;
@@ -470,10 +474,8 @@ function renderStopSection(syncStatus: string): string {
   <div class="flex items-center justify-between">
     <div class="flex items-center gap-3">
       <h3 class="text-lg font-semibold text-white">Stop Proton Drive Sync</h3>
-      <div class="relative group">
-        <svg class="w-4 h-4 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
+      <div class="relative group flex items-center">
+        <i data-lucide="info" class="w-4 h-4 text-gray-500 cursor-help"></i>
         <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-xs text-gray-300 w-96 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
           You can start it again with <code class="bg-gray-800 px-1 py-0.5 rounded font-mono">proton-drive-sync start</code>
         </div>
