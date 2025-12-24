@@ -14,7 +14,6 @@ import {
   serviceUninstallCommand,
   serviceUnloadCommand,
   serviceLoadCommand,
-  serviceReloadCommand,
 } from './cli/service.js';
 import { stopCommand } from './cli/stop.js';
 import { startCommand } from './cli/start.js';
@@ -97,10 +96,5 @@ serviceCommand
   .command('unload')
   .description('Unload the service (will reload on next boot)')
   .action(serviceUnloadCommand);
-
-serviceCommand
-  .command('reload')
-  .description('Reload the service (restarts to pick up config changes)')
-  .action(serviceReloadCommand);
 
 program.parse();

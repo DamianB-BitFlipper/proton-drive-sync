@@ -257,29 +257,3 @@ export function serviceLoadCommand(): void {
     process.exit(1);
   }
 }
-
-export function serviceReloadCommand(): void {
-  if (process.platform !== 'darwin') {
-    console.error('Error: Service reload is only supported on macOS.');
-    process.exit(1);
-  }
-
-  if (!existsSync(PLIST_PATH)) {
-    console.error('Service is not installed. Run `proton-drive-sync service install` first.');
-    process.exit(1);
-  }
-
-  try {
-    execSync(`launchctl stop ${SERVICE_NAME}`, { stdio: 'ignore' });
-  } catch {
-    // Ignore if not running
-  }
-
-  try {
-    execSync(`launchctl start ${SERVICE_NAME}`, { stdio: 'ignore' });
-    console.log('Service reloaded.');
-  } catch {
-    console.error('Failed to reload service.');
-    process.exit(1);
-  }
-}
