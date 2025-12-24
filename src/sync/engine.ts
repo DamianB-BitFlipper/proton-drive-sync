@@ -30,6 +30,9 @@ import { processAllPendingJobs, setSyncConcurrency } from './processor.js';
 // Polling interval for processing jobs in watch mode (10 seconds)
 const JOB_POLL_INTERVAL_MS = 10_000;
 
+// Heartbeat interval to dashboard (2 seconds) - independent of job processing
+const SYNC_STATUS_HEARTBEAT_MS = 2_000;
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -187,6 +190,7 @@ function startJobProcessorLoop(client: ProtonDriveClient, dryRun: boolean): Proc
   let running = true;
   let paused = false;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
 
   // Register pause/resume signal handlers
   const handlePause = (): void => {
@@ -212,11 +216,15 @@ function startJobProcessorLoop(client: ProtonDriveClient, dryRun: boolean): Proc
   registerSignalHandler('pause-sync', handlePause);
   registerSignalHandler('resume-sync', handleResume);
 
+  // Start separate heartbeat loop - runs independently of job processing
+  // This ensures dashboard stays connected even during long-running jobs
+  sendStatusToDashboard({ paused }); // Send initial heartbeat immediately
+  heartbeatIntervalId = setInterval(() => {
+    sendStatusToDashboard({ paused });
+  }, SYNC_STATUS_HEARTBEAT_MS);
+
   const processLoop = async (): Promise<void> => {
     if (!running) return;
-
-    // Send heartbeat to dashboard to indicate sync loop is alive
-    sendStatusToDashboard({ paused });
 
     if (paused) {
       // When paused, poll every second to stay responsive
@@ -254,6 +262,10 @@ function startJobProcessorLoop(client: ProtonDriveClient, dryRun: boolean): Proc
       if (timeoutId) {
         clearTimeout(timeoutId);
         timeoutId = null;
+      }
+      if (heartbeatIntervalId) {
+        clearInterval(heartbeatIntervalId);
+        heartbeatIntervalId = null;
       }
     },
     isPaused: () => paused,

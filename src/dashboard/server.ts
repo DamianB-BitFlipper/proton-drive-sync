@@ -454,9 +454,8 @@ export function sendStatusToDashboard(options?: {
   const getUsername = (auth: AuthStatusUpdate) =>
     auth.status === 'authenticated' ? auth.username : undefined;
 
-  // Check if status has changed (force send if any options were explicitly passed)
+  // Check if status has actually changed (compare values, not just presence of options)
   const hasChanged =
-    !!options ||
     !lastSentStatus ||
     lastSentStatus.syncStatus !== status.syncStatus ||
     lastSentStatus.auth.status !== status.auth.status ||

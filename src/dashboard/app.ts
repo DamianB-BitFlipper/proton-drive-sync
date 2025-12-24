@@ -239,12 +239,15 @@ function renderProcessingQueue(jobs: DashboardJob[]): string {
 /** Render blocked queue HTML (header + list) */
 function renderBlockedQueue(jobs: DashboardJob[]): string {
   const header = `
-<div class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl">
+<div class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl min-h-[56px]">
   <h2 class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2">
     <span class="w-2 h-2 rounded-full bg-red-500"></span>
     Failed Transfers
   </h2>
-  <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
+  <div class="flex items-center gap-3">
+    <div class="h-7"></div>
+    <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
+  </div>
 </div>`;
 
   const listContent =
@@ -284,12 +287,15 @@ function renderBlockedQueue(jobs: DashboardJob[]): string {
 /** Render recent queue HTML (header + list) */
 function renderRecentQueue(jobs: DashboardJob[]): string {
   const header = `
-<div class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl">
+<div class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl min-h-[56px]">
   <h2 class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2">
     <span class="w-2 h-2 rounded-full bg-green-500"></span>
     Recently Synced
   </h2>
-  <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
+  <div class="flex items-center gap-3">
+    <div class="h-7"></div>
+    <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
+  </div>
 </div>`;
 
   const listContent =
@@ -326,7 +332,10 @@ function renderPendingQueue(jobs: DashboardJob[]): string {
     <span class="w-2 h-2 rounded-full bg-amber-500"></span>
     Pending
   </h2>
-  <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
+  <div class="flex items-center gap-3">
+    <div class="h-7"></div>
+    <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
+  </div>
 </div>`;
 
   const listContent =
@@ -373,13 +382,13 @@ function renderRetryQueue(jobs: DashboardJob[]): string {
       : '';
 
   const header = `
-<div class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl">
+<div class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl min-h-[56px]">
   <h2 class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2">
     <span class="w-2 h-2 rounded-full bg-orange-500"></span>
     Retry Queue
   </h2>
   <div class="flex items-center gap-3">
-    ${retryAllButton}
+    ${retryAllButton || '<div class="h-7"></div>'}
     <span class="text-xs font-mono text-gray-500">${jobs.length} items</span>
   </div>
 </div>`;
@@ -541,7 +550,7 @@ function renderSyncingBadge(syncStatus: SyncStatus): string {
 /** Render pause/resume button (hidden when disconnected) */
 function renderPauseButton(syncStatus: SyncStatus): string {
   if (syncStatus === 'disconnected') {
-    return '<div id="pause-button"></div>';
+    return '<div id="pause-button" class="h-7"></div>';
   }
   if (syncStatus === 'paused') {
     // Show resume button
