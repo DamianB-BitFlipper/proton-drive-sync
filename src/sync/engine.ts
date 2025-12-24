@@ -193,12 +193,14 @@ function startJobProcessorLoop(client: ProtonDriveClient, dryRun: boolean): Proc
     paused = true;
     setFlag(FLAGS.PAUSED);
     logger.info('Sync paused');
+    sendSyncHeartbeat(paused);
   };
 
   const handleResume = (): void => {
     paused = false;
     clearFlag(FLAGS.PAUSED);
     logger.info('Sync resumed');
+    sendSyncHeartbeat(paused);
   };
 
   // Check if we were paused before restart (hot reload)

@@ -173,8 +173,8 @@ let lastSentStatus: DashboardStatus | null = null;
 let lastSyncHeartbeat: number = 0;
 let lastPausedState = false;
 
-// How long to wait before considering sync loop dead (30 seconds)
-const SYNC_HEARTBEAT_TIMEOUT_MS = 30_000;
+// How long to wait before considering sync loop dead (90 seconds)
+const SYNC_HEARTBEAT_TIMEOUT_MS = 90_000;
 
 // Heartbeat interval (1.5 seconds) - checks for status changes
 const HEARTBEAT_INTERVAL_MS = 1500;
