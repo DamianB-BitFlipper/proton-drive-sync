@@ -20,16 +20,18 @@ run:
 # Uses watchman to watch all src/ files including HTML, rebuilds and restarts
 dev:
 	@echo "Starting dev mode with watchman file watching..."
+	@watchman watch-project . > /dev/null
 	@make build
-	@while true; do \
+	@bash -c 'while true; do \
 		PATH="$(PWD)/dist:$$PATH" proton-drive-sync start --no-daemon & \
 		PID=$$!; \
-		watchman-wait . -m 1 -p 'src/**/*.ts' -p 'src/**/*.html'; \
-		echo "File changed, rebuilding..."; \
+		watchman-wait . -m 1 -p "src/**/*"; \
 		kill $$PID 2>/dev/null; \
+		sleep 1; \
+		kill -9 $$PID 2>/dev/null; \
 		wait $$PID 2>/dev/null; \
 		make build; \
-	done
+	done'
 
 # Run pre-commit checks on all files
 pre-commit:
