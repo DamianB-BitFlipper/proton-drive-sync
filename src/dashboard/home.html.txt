@@ -89,7 +89,7 @@
           class="w-4 h-4 text-gray-500 transition-transform duration-200"
         ></i>
       </button>
-      <div id="logs-controls" class="hidden items-center gap-2">
+      <div id="logs-controls" class="hidden flex items-center gap-2">
         <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
         <!-- Log Level Filter -->
         <div class="flex items-center gap-2 ml-4">
