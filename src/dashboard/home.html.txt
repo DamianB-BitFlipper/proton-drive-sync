@@ -71,18 +71,25 @@
     </div>
   </div>
 
-  <!-- Logs -->
-  <div class="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[400px]">
+  <!-- Logs (Collapsible) -->
+  <div class="bg-gray-800 rounded-xl border border-gray-700 flex flex-col">
     <div
-      class="px-5 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl"
+      id="logs-header"
+      class="px-5 py-4 flex justify-between items-center bg-gray-800/50 backdrop-blur rounded-t-xl rounded-b-xl"
     >
-      <h2
-        class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2"
+      <button
+        onclick="toggleLogs()"
+        class="text-sm font-semibold text-gray-100 uppercase tracking-wider flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
       >
         <i data-lucide="align-left" class="w-4 h-4 text-gray-400"></i>
         Live Logs
-      </h2>
-      <div class="flex items-center gap-2">
+        <i
+          id="logs-chevron"
+          data-lucide="chevron-right"
+          class="w-4 h-4 text-gray-500 transition-transform duration-200"
+        ></i>
+      </button>
+      <div id="logs-controls" class="hidden items-center gap-2">
         <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
         <!-- Log Level Filter -->
         <div class="flex items-center gap-2 ml-4">
@@ -124,7 +131,7 @@
     </div>
     <div
       id="logs-container"
-      class="flex-1 overflow-y-auto custom-scrollbar p-4 bg-gray-950 font-mono text-xs leading-relaxed"
+      class="hidden overflow-y-auto custom-scrollbar p-4 bg-gray-950 font-mono text-xs leading-relaxed h-[356px] rounded-b-xl"
       hx-ext="sse"
       sse-connect="/api/logs"
       sse-swap="log"

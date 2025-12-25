@@ -1,4 +1,31 @@
 <script>
+  // Logs collapse/expand
+  let logsExpanded = false;
+
+  function toggleLogs() {
+    logsExpanded = !logsExpanded;
+    const container = document.getElementById('logs-container');
+    const controls = document.getElementById('logs-controls');
+    const chevron = document.getElementById('logs-chevron');
+    const header = document.getElementById('logs-header');
+
+    if (logsExpanded) {
+      container.classList.remove('hidden');
+      controls.classList.remove('hidden');
+      controls.classList.add('flex');
+      chevron.style.transform = 'rotate(90deg)';
+      header.classList.remove('rounded-b-xl');
+      header.classList.add('border-b', 'border-gray-700');
+    } else {
+      container.classList.add('hidden');
+      controls.classList.add('hidden');
+      controls.classList.remove('flex');
+      chevron.style.transform = 'rotate(0deg)';
+      header.classList.add('rounded-b-xl');
+      header.classList.remove('border-b', 'border-gray-700');
+    }
+  }
+
   // Log level filtering
   let currentLogLevel = 20;
 
