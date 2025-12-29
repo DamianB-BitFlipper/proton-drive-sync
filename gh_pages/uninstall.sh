@@ -33,6 +33,20 @@ echo -e ""
 echo -e "${MUTED}Proton Drive Sync${NC} uninstalled successfully!"
 echo -e ""
 
+# Prompt user about config and data directories
+CONFIG_DIR="$HOME/.config/proton-drive-sync"
+STATE_DIR="$HOME/.local/state/proton-drive-sync"
+
+if [[ -d "$CONFIG_DIR" ]] || [[ -d "$STATE_DIR" ]]; then
+	read -p "Delete your configuration settings and sync history? (y/N): " -n 1 -r
+	echo -e ""
+	if [[ $REPLY =~ ^[Yy]$ ]]; then
+		[[ -d "$CONFIG_DIR" ]] && rm -rf "$CONFIG_DIR" && echo -e "${MUTED}Removed${NC} $CONFIG_DIR"
+		[[ -d "$STATE_DIR" ]] && rm -rf "$STATE_DIR" && echo -e "${MUTED}Removed${NC} $STATE_DIR"
+	fi
+	echo -e ""
+fi
+
 # Prompt user about Watchman
 if command -v watchman >/dev/null 2>&1; then
 	echo -e "${MUTED}Watchman is still installed on your system.${NC}"
