@@ -53,6 +53,7 @@ import { RecentQueue } from './views/fragments/RecentQueue.js';
 import { PendingQueue } from './views/fragments/PendingQueue.js';
 import { RetryQueue } from './views/fragments/RetryQueue.js';
 import { PauseButton } from './views/fragments/PauseButton.js';
+import { ControlsPauseButton } from './views/fragments/ControlsPauseButton.js';
 import { AddDirectoryModal } from './views/fragments/AddDirectoryModal.js';
 import { NoSyncDirsModal } from './views/fragments/NoSyncDirsModal.js';
 
@@ -97,6 +98,7 @@ export const FRAG = {
   syncing: 'syncing',
   processingTitle: 'processing-title',
   stopSection: 'stop-section',
+  controlsPauseButton: 'controls-pause-button',
   pauseButton: 'pause-button',
   dryRunBanner: 'dry-run-banner',
   configInfo: 'config-info',
@@ -302,7 +304,7 @@ function renderStopSection(syncStatus: string): string {
   if (syncStatus === 'disconnected') return '';
 
   return `
-<div class="bg-gray-800 rounded-xl border border-gray-700 p-6">
+<div class="bg-gray-800 rounded-xl border border-gray-700 p-6 h-[88px]">
   <div class="flex items-center justify-between">
     <div class="flex items-center gap-3">
       <h3 class="text-lg font-semibold text-white">Shut Down</h3>
@@ -371,6 +373,11 @@ function renderSyncingBadge(syncStatus: SyncStatus): string {
 /** Render pause/resume button (hidden when disconnected) */
 function renderPauseButton(syncStatus: SyncStatus): string {
   return PauseButton({ syncStatus })!.toString();
+}
+
+/** Render controls page pause/resume card (hidden when disconnected) */
+function renderControlsPauseButton(syncStatus: SyncStatus): string {
+  return ControlsPauseButton({ syncStatus })!.toString();
 }
 
 /** Render dry-run banner HTML */
@@ -554,6 +561,8 @@ export function renderFragment(key: FragmentKey, s: DashboardSnapshot): string {
       return renderProcessingTitle(s.syncStatus === 'paused');
     case FRAG.stopSection:
       return renderStopSection(s.syncStatus);
+    case FRAG.controlsPauseButton:
+      return renderControlsPauseButton(s.syncStatus);
     case FRAG.pauseButton:
       return renderPauseButton(s.syncStatus);
     case FRAG.dryRunBanner:
@@ -675,10 +684,9 @@ app.get('/controls', async (c) => {
   const isOnboarding = !getFlagData(FLAGS.ONBOARDING);
 
   // Server-side render stop-section fragment
-  let content = controlsHtml.replace(
-    '{{STOP_SECTION_CONTENT}}',
-    renderFragment(FRAG.stopSection, s)
-  );
+  let content = controlsHtml
+    .replace('{{STOP_SECTION_CONTENT}}', renderFragment(FRAG.stopSection, s))
+    .replace('{{CONTROLS_PAUSE_CONTENT}}', renderFragment(FRAG.controlsPauseButton, s));
 
   // Server-side render start-on-login toggle state
   const serviceEnabled = hasFlag(FLAGS.SERVICE_LOADED);
@@ -835,7 +843,11 @@ app.post('/api/toggle-pause', (c) => {
   }
   // Return the new button state (optimistic UI update for button only)
   // The badge will update via the heartbeat path when the engine responds
-  return c.html(renderPauseButton(isPaused ? 'syncing' : 'paused'));
+  // Include both pause buttons with OOB swap for the controls page button
+  const newStatus = isPaused ? 'syncing' : 'paused';
+  const homePauseButton = renderPauseButton(newStatus);
+  const controlsPauseButton = renderControlsPauseButton(newStatus);
+  return c.html(`${homePauseButton}${controlsPauseButton}`);
 });
 
 /** Handle signals from dashboard */
@@ -1049,6 +1061,7 @@ app.get('/api/events', async (c) => {
       FRAG.syncing,
       FRAG.processingTitle,
       FRAG.pauseButton,
+      FRAG.controlsPauseButton,
       FRAG.processingQueue,
       FRAG.blockedQueue,
       FRAG.pendingQueue,
@@ -1093,6 +1106,7 @@ app.get('/api/events', async (c) => {
         FRAG.syncing,
         FRAG.processingTitle,
         FRAG.pauseButton,
+        FRAG.controlsPauseButton,
         FRAG.stopSection,
         FRAG.processingQueue, // Re-render to update spinners when paused/resumed
       ]);

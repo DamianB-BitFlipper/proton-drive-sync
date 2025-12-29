@@ -12,8 +12,8 @@ build:
 build-check:
 	bun run build:check
 
-# Run directly with bun (one-off commands)
-run:
+# Run directly with bun (one-off commands) - builds first to ensure PATH has latest binary
+run: build
 	PATH="$(PWD)/dist:$(PATH)" bun src/index.ts $(ARGS)
 
 # Run directly with bun in watch mode (auto-reload on file changes)
@@ -23,7 +23,7 @@ dev:
 	@watchman watch-project . > /dev/null
 	@make build
 	@bash -c 'while true; do \
-		PATH="$(PWD)/dist:$$PATH" proton-drive-sync start --no-daemon --debug & \
+		PATH="$(PWD)/dist:$$PATH" proton-drive-sync start --no-daemon --debug $(ARGS) & \
 		PID=$$!; \
 		watchman-wait . -m 1 -p "src/**/*"; \
 		kill $$PID 2>/dev/null; \

@@ -3,10 +3,22 @@
   <div>
     <h2 class="text-2xl font-bold text-white mb-6">Controls</h2>
 
+    <!-- First row: Pause/Resume and Shut Down -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 [&:has(#stop-section:empty)]:lg:grid-cols-1">
+      <!-- Pause/Resume Sync -->
+      {{CONTROLS_PAUSE_CONTENT}}
+
+      <!-- Stop Service -->
+      <div id="stop-section" hx-swap="innerHTML" sse-swap="stop-section">
+        {{STOP_SECTION_CONTENT}}
+      </div>
+    </div>
+
+    <!-- Second row: Start on Login -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
       <!-- Start on Login Toggle -->
-      <div id="start-on-login-section" class="bg-gray-800 rounded-xl border border-gray-700 p-6">
-        <div class="flex items-center justify-between">
+      <div id="start-on-login-section" class="bg-gray-800 rounded-xl border border-gray-700 p-6 h-[88px] flex items-center">
+        <div class="flex items-center justify-between w-full">
           <div class="flex items-center gap-3">
             <h3 class="text-lg font-semibold text-white">Start on Login</h3>
             <div class="relative group flex items-center">
@@ -31,11 +43,6 @@
             ></span>
           </button>
         </div>
-      </div>
-
-      <!-- Stop Service -->
-      <div id="stop-section" hx-swap="innerHTML" sse-swap="stop-section">
-        {{STOP_SECTION_CONTENT}}
       </div>
     </div>
   </div>
