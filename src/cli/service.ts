@@ -101,7 +101,6 @@ export async function serviceInstallCommand(interactive: boolean = true): Promis
     setFlag(FLAGS.SERVICE_INSTALLED);
     loadSyncService();
     logger.info('proton-drive-sync service installed and started.');
-    logger.info('View logs with: proton-drive-sync logs');
   } else {
     logger.info('Skipping proton-drive-sync service.');
   }
