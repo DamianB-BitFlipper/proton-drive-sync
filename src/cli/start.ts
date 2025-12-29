@@ -212,6 +212,32 @@ export async function startCommand(options: StartOptions): Promise<void> {
     releaseRunLock();
   };
 
+  // Global crash handlers - log errors and cleanup before exit
+  process.on('uncaughtException', async (error) => {
+    logger.error(`Uncaught exception: ${error.message}`);
+    if (error.stack) {
+      logger.error(error.stack);
+    }
+    await cleanup();
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', async (reason) => {
+    const message = reason instanceof Error ? reason.message : String(reason);
+    const stack = reason instanceof Error ? reason.stack : undefined;
+    logger.error(`Unhandled rejection: ${message}`);
+    if (stack) {
+      logger.error(stack);
+    }
+    await cleanup();
+    process.exit(1);
+  });
+
+  process.on('SIGTERM', () => {
+    logger.info('SIGTERM received, shutting down...');
+    cleanup().then(() => process.exit(0));
+  });
+
   // Handle Ctrl+C early (before auth) to ensure cleanup
   process.once('SIGINT', () => {
     logger.info('Interrupted');
