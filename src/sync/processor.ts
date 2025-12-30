@@ -18,6 +18,7 @@ import {
   categorizeError,
   scheduleRetry,
   ErrorCategory,
+  REUPLOAD_DELETE_RECREATE_THRESHOLD,
 } from './queue.js';
 
 // ============================================================================
@@ -213,7 +214,7 @@ async function processJob(
           `Job ${id} (${localPath}) failed permanently after ${maxRetries} retries: ${errorMessage}`
         );
         markJobBlocked(id, localPath, errorMessage, dryRun);
-      } else if (nRetries >= 2) {
+      } else if (nRetries >= REUPLOAD_DELETE_RECREATE_THRESHOLD) {
         // Retry count >= 2, attempt delete+recreate
         logger.warn(`Job ${id} (${localPath}) retry ${nRetries}, attempting delete+recreate`);
         try {

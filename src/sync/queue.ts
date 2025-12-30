@@ -82,9 +82,12 @@ export interface ErrorClassification {
 
 const MAX_RETRIES: Record<ErrorCategory, number> = {
   [ErrorCategory.OTHER]: RETRY_DELAYS_SEC.length,
-  [ErrorCategory.REUPLOAD_NEEDED]: 2,
+  [ErrorCategory.REUPLOAD_NEEDED]: 4,
   [ErrorCategory.NETWORK]: Infinity,
 };
+
+/** Number of retries before attempting delete+recreate for REUPLOAD_NEEDED errors */
+export const REUPLOAD_DELETE_RECREATE_THRESHOLD = 2;
 
 // ============================================================================
 // Dry-Run State (module-level, only used when dryRun=true)
