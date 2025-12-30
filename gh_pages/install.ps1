@@ -36,7 +36,6 @@ $APP = "proton-drive-sync"
 $REPO = "damianb-bitflipper/proton-drive-sync"
 $INSTALL_DIR = "$env:LOCALAPPDATA\$APP"
 $BIN_DIR = "$INSTALL_DIR\bin"
-$WATCHMAN_DIR = "$INSTALL_DIR\watchman"
 
 # ============================================================================
 # Helper Functions
@@ -105,59 +104,44 @@ Write-Step "Detected Windows x64"
 Write-Step "Creating installation directories..."
 
 New-Item -ItemType Directory -Force -Path $BIN_DIR | Out-Null
-New-Item -ItemType Directory -Force -Path $WATCHMAN_DIR | Out-Null
 
 Write-Success "Created $INSTALL_DIR"
 
 # ============================================================================
-# Install Watchman
+# Install Watchman via Chocolatey
 # ============================================================================
 
-Write-Step "Installing Watchman..."
+Write-Step "Installing Watchman via Chocolatey..."
 
-try {
-    # Get latest Watchman release
-    $watchmanRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/facebook/watchman/releases/latest"
-    $watchmanVersion = $watchmanRelease.tag_name
-    $watchmanAsset = $watchmanRelease.assets | Where-Object { $_.name -like "*windows.zip" }
-    
-    if (-not $watchmanAsset) {
-        throw "Could not find Windows Watchman release"
-    }
-    
-    $watchmanUrl = $watchmanAsset.browser_download_url
-    $watchmanZip = "$env:TEMP\watchman.zip"
-    
-    Write-Host "  Downloading Watchman $watchmanVersion..."
-    Invoke-WebRequest -Uri $watchmanUrl -OutFile $watchmanZip
-    
-    Write-Host "  Extracting..."
-    # Remove old watchman if exists
-    if (Test-Path "$WATCHMAN_DIR\bin") {
-        Remove-Item -Recurse -Force "$WATCHMAN_DIR\*"
-    }
-    
-    Expand-Archive -Path $watchmanZip -DestinationPath $env:TEMP -Force
-    
-    # Find the extracted folder (named like watchman-vYYYY.MM.DD.00-windows)
-    $extractedDir = Get-ChildItem -Path $env:TEMP -Directory | Where-Object { $_.Name -like "watchman-*-windows" } | Select-Object -First 1
-    
-    if ($extractedDir) {
-        # Create bin directory if needed
-        New-Item -ItemType Directory -Force -Path "$WATCHMAN_DIR\bin" | Out-Null
-        # Copy bin folder contents
-        Copy-Item -Path "$($extractedDir.FullName)\bin\*" -Destination "$WATCHMAN_DIR\bin" -Recurse -Force
-        Remove-Item -Recurse -Force $extractedDir.FullName
-    }
-    
-    Remove-Item $watchmanZip -ErrorAction SilentlyContinue
-    
-    Write-Success "Watchman $watchmanVersion installed"
+if (-not (Test-Command "choco")) {
+    Write-Host "Error: Chocolatey is required to install Watchman on Windows." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Please install Chocolatey first:" -ForegroundColor Yellow
+    Write-Host "  https://chocolatey.org/install" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Then re-run this installer." -ForegroundColor Yellow
+    exit 1
 }
-catch {
-    Write-Warn "Warning: Failed to install Watchman: $_"
-    Write-Warn "You may need to install Watchman manually from:"
-    Write-Warn "https://github.com/facebook/watchman/releases"
+
+if (Test-Command "watchman") {
+    Write-Success "Watchman is already installed"
+}
+else {
+    try {
+        Write-Host "  Installing Watchman (this may require administrator privileges)..."
+        choco install watchman -y
+        if ($LASTEXITCODE -ne 0) {
+            throw "Chocolatey install failed with exit code $LASTEXITCODE"
+        }
+        Write-Success "Watchman installed via Chocolatey"
+    }
+    catch {
+        Write-Host "Error: Failed to install Watchman: $_" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Try running this installer as Administrator, or install Watchman manually:" -ForegroundColor Yellow
+        Write-Host "  choco install watchman" -ForegroundColor Cyan
+        exit 1
+    }
 }
 
 # ============================================================================
@@ -210,7 +194,7 @@ if (-not $NoModifyPath) {
     Write-Step "Updating PATH environment variable..."
 
     $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-    $pathsToAdd = @($BIN_DIR, "$WATCHMAN_DIR\bin")
+    $pathsToAdd = @($BIN_DIR)
     $pathModified = $false
 
     foreach ($p in $pathsToAdd) {
@@ -233,9 +217,8 @@ if (-not $NoModifyPath) {
 }
 else {
     Write-Warn "Skipping PATH modification (--NoModifyPath specified)"
-    Write-Host "  Add these to your PATH manually:"
+    Write-Host "  Add this to your PATH manually:"
     Write-Host "    $BIN_DIR"
-    Write-Host "    $WATCHMAN_DIR\bin"
 }
 
 # ============================================================================
@@ -254,12 +237,11 @@ if (-not (Test-Path $binPath)) {
 }
 
 # Verify watchman
-$watchmanPath = "$WATCHMAN_DIR\bin\watchman.exe"
-if (Test-Path $watchmanPath) {
+if (Test-Command "watchman") {
     Write-Success "Watchman: OK"
 }
 else {
-    Write-Warn "Watchman: Not found (may need manual installation)"
+    Write-Warn "Watchman: Not found - please restart your terminal or run 'refreshenv'"
 }
 
 # Verify proton-drive-sync

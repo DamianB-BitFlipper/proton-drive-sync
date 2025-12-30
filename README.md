@@ -24,11 +24,11 @@ irm https://www.damianb.dev/proton-drive-sync/install.ps1 | iex
 
 ### Requirements
 
-| Platform    | Requirements                               |
-| ----------- | ------------------------------------------ |
-| **macOS**   | [Homebrew](https://brew.sh) (for Watchman) |
-| **Linux**   | x64 architecture, systemd                  |
-| **Windows** | x64 architecture, PowerShell 5.1+          |
+| Platform    | Requirements                                                |
+| ----------- | ----------------------------------------------------------- |
+| **macOS**   | [Homebrew](https://brew.sh) (for Watchman)                  |
+| **Linux**   | None                                                        |
+| **Windows** | [Chocolatey](https://chocolatey.org/install) (for Watchman) |
 
 ### Dashboard
 

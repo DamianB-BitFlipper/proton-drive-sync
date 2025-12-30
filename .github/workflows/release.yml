@@ -52,15 +52,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/facebook/watchman/releases/latest"
-          $asset = $release.assets | Where-Object { $_.name -like "*windows.zip" }
-          Write-Host "Downloading Watchman from $($asset.browser_download_url)"
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile watchman.zip
-          Expand-Archive watchman.zip -DestinationPath watchman-extract
-          $watchmanDir = Get-ChildItem -Path watchman-extract -Directory | Select-Object -First 1
-          $watchmanBin = "$($watchmanDir.FullName)\bin"
-          Write-Host "Adding $watchmanBin to PATH"
-          echo "$watchmanBin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          choco install watchman -y
+          refreshenv
 
       - name: Install dependencies
         run: bun install

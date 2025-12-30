@@ -20,7 +20,7 @@ $APP = "proton-drive-sync"
 $INSTALL_DIR = "$env:LOCALAPPDATA\$APP"
 $CONFIG_DIR = "$env:APPDATA\$APP"
 $BIN_DIR = "$INSTALL_DIR\bin"
-$WATCHMAN_DIR = "$INSTALL_DIR\watchman"
+
 
 # ============================================================================
 # Helper Functions
@@ -115,8 +115,22 @@ Write-Host ""
 $response = Read-Host "Would you also like to remove Watchman? (y/N)"
 
 if ($response -eq 'y' -or $response -eq 'Y') {
-    Write-Step "Watchman was installed in $WATCHMAN_DIR (already removed with installation directory)"
-    Write-Host "  If you installed Watchman separately, you may need to remove it manually."
+    Write-Step "Removing Watchman..."
+    
+    # Check if Chocolatey is available
+    $chocoPath = Get-Command choco -ErrorAction SilentlyContinue
+    if ($chocoPath) {
+        try {
+            choco uninstall watchman -y
+            Write-Success "Watchman uninstalled via Chocolatey"
+        }
+        catch {
+            Write-Host "  Failed to uninstall Watchman via Chocolatey: $_" -ForegroundColor Yellow
+        }
+    }
+    else {
+        Write-Host "  Chocolatey not found. If Watchman was installed manually, please remove it manually." -ForegroundColor Yellow
+    }
 }
 
 Write-Host ""
