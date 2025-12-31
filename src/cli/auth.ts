@@ -152,7 +152,11 @@ export async function authCommand(): Promise<void> {
     await storeCredentials(credentials);
     logger.info('Credentials saved securely.');
   } catch (error) {
-    logger.error('Authentication failed:', (error as Error).message);
+    const apiError = error as ApiError;
+    const message = apiError.message || 'Unknown error';
+    const code = apiError.code ? ` (code: ${apiError.code})` : '';
+    logger.debug('Full authentication error:', apiError);
+    logger.error(`Authentication failed${code}: ${message}`);
     process.exit(1);
   }
 }

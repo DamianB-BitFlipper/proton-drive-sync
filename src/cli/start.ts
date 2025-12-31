@@ -5,7 +5,7 @@
  */
 
 import { loadConfig, watchConfig } from '../config.js';
-import { logger, enableDebug, setDryRun } from '../logger.js';
+import { logger, setDryRun } from '../logger.js';
 import { startSignalListener, stopSignalListener, registerSignalHandler } from '../signals.js';
 import { acquireRunLock, releaseRunLock, setFlag, isPaused, FLAGS } from '../flags.js';
 import { getStoredCredentials, createClientFromTokens, type ProtonDriveClient } from './auth.js';
@@ -27,7 +27,8 @@ interface StartOptions {
   daemon?: boolean; // Commander's --no-daemon sets this to false
   watch?: boolean; // Commander's --no-watch sets this to false
   dryRun?: boolean;
-  debug?: number;
+  debug?: boolean; // Global --debug flag
+  sdkDebug?: boolean; // Global --sdk-debug flag
   dashboard?: boolean;
   paused?: boolean;
 }
@@ -105,7 +106,8 @@ function spawnDaemon(options: StartOptions): void {
   // Forward relevant flags to the daemon process
   if (options.watch === false) args.push('--no-watch');
   if (options.dryRun) args.push('--dry-run');
-  if (options.debug) args.push('--debug', String(options.debug));
+  if (options.debug) args.push('--debug');
+  if (options.sdkDebug) args.push('--sdk-debug');
   if (options.paused) args.push('--paused');
 
   const child = Bun.spawn(['proton-drive-sync', ...args], {
@@ -156,13 +158,11 @@ export async function startCommand(options: StartOptions): Promise<void> {
 
   // From here on, we're running in foreground (--no-daemon mode)
 
-  // Set debug level from CLI flag
-  if (options.debug) {
-    const level = options.debug;
-    Bun.env.DEBUG_LEVEL = String(level);
-    enableDebug();
-    logger.debug(`Debug level ${level}: App debug enabled`);
-    if (level >= 2) logger.debug(`Debug level ${level}: SDK debug enabled`);
+  // Set DEBUG_LEVEL env var for SDK debug (used by daemon subprocess)
+  if (options.sdkDebug) {
+    Bun.env.DEBUG_LEVEL = '2';
+  } else if (options.debug) {
+    Bun.env.DEBUG_LEVEL = '1';
   }
 
   // Handle dry-run mode
@@ -282,7 +282,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
   }
 
   // Authenticate with Proton
-  const sdkDebug = (options.debug ?? 0) >= 2;
+  const sdkDebug = options.sdkDebug;
   let client;
   try {
     client = await authenticateWithStatus(sdkDebug);

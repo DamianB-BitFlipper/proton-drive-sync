@@ -5,6 +5,7 @@
 import { program } from 'commander';
 import { authCommand } from './cli/auth.js';
 import { configCommand } from './cli/config.js';
+import { enableDebug } from './logger.js';
 import { logsCommand, logsClearCommand } from './cli/logs.js';
 import { pauseCommand } from './cli/pause.js';
 import { resetCommand } from './cli/reset.js';
@@ -22,6 +23,21 @@ import { dashboardCommand } from './cli/dashboard.js';
 const { version } = (await import('../package.json')).default;
 
 program.name('proton-drive-sync').description('Sync local files to Proton Drive').version(version);
+
+program
+  .option('--debug', 'Enable debug logging')
+  .option('--sdk-debug', 'Enable Proton SDK debug logging (requires --debug)');
+
+program.hook('preAction', (thisCommand) => {
+  const opts = thisCommand.opts();
+  if (opts.sdkDebug && !opts.debug) {
+    console.error('Error: --sdk-debug requires --debug to be set');
+    process.exit(1);
+  }
+  if (opts.debug) {
+    enableDebug();
+  }
+});
 
 program
   .command('auth')
@@ -44,12 +60,6 @@ program
   .option('-n, --dry-run', 'Show what would be synced without making changes')
   .option('--no-daemon', 'Run in foreground instead of as daemon')
   .option('--no-watch', 'Sync once and exit (requires --no-daemon)')
-  .option(
-    '--debug',
-    'Enable debug logging (use twice for SDK debug)',
-    (_, prev) => (prev || 0) + 1,
-    0
-  )
   .option('--dashboard', 'Run as dashboard subprocess (internal use)')
   .option('--paused', 'Start with syncing paused (requires watch mode)')
   .action(startCommand);
