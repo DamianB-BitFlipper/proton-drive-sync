@@ -114,9 +114,22 @@ export interface DeleteProtonDriveClient extends BaseProtonDriveClient {
 }
 
 /**
+ * Proton Drive client interface for relocate (rename/move) operations
+ */
+export interface RelocateProtonDriveClient extends BaseProtonDriveClient {
+  renameNode(nodeUid: string, newName: string): Promise<NodeResult>;
+  moveNodes(
+    nodeUids: string[],
+    newParentNodeUid: string,
+    signal?: AbortSignal
+  ): AsyncIterable<NodeResult>;
+}
+
+/**
  * Full Proton Drive client interface with all operations
  */
-export interface ProtonDriveClient extends CreateProtonDriveClient, DeleteProtonDriveClient {}
+export interface ProtonDriveClient
+  extends CreateProtonDriveClient, DeleteProtonDriveClient, RelocateProtonDriveClient {}
 
 // ============================================================================
 // Operation Results
@@ -125,6 +138,7 @@ export interface ProtonDriveClient extends CreateProtonDriveClient, DeleteProton
 export interface CreateResult {
   success: boolean;
   nodeUid?: string;
+  parentNodeUid?: string;
   error?: string;
   isDirectory: boolean;
 }

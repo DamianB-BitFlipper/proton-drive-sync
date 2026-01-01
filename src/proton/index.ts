@@ -6,6 +6,7 @@
 
 export { createNode } from './create.js';
 export { deleteNode } from './delete.js';
+export { relocateNode, getParentFolderUid } from './rename.js';
 export {
   parsePath,
   findNodeByName,
@@ -33,3 +34,4 @@ export type {
   ParsedPath,
   ApiError,
 } from './types.js';
+export type { RelocateResult } from './rename.js';

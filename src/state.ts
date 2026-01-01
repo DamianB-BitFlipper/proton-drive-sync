@@ -6,7 +6,7 @@
 
 import { realpathSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
-import { db, schema, STATE_DIR } from './db/index.js';
+import { db, schema, STATE_DIR, type Tx } from './db/index.js';
 import { getConfig } from './config.js';
 import { logger } from './logger.js';
 
@@ -55,24 +55,27 @@ export function getAllClocks(): Record<string, string> {
  * Delete the watchman clock for a directory.
  * No-op if dryRun is true.
  */
-export function deleteClock(directory: string, dryRun: boolean): void {
+export function deleteClock(directory: string, dryRun: boolean, tx?: Tx): void {
   if (dryRun) return;
   logger.debug(`Deleting clock for ${directory}`);
-  db.delete(schema.clocks).where(eq(schema.clocks.directory, directory)).run();
+  const target = tx ?? db;
+  target.delete(schema.clocks).where(eq(schema.clocks.directory, directory)).run();
 }
 
 /**
  * Remove clock entries for directories no longer in sync_dirs config.
  */
-export function cleanupOrphanedClocks(dryRun: boolean): void {
+export function cleanupOrphanedClocks(dryRun: boolean, tx: Tx): void {
+  if (dryRun) return;
+
   const config = getConfig();
   const validDirs = new Set(config.sync_dirs.map((d) => realpathSync(d.source_path)));
 
-  const allClocks = getAllClocks();
-  for (const directory of Object.keys(allClocks)) {
-    if (!validDirs.has(directory)) {
-      logger.info(`Removing orphaned clock for: ${directory}`);
-      deleteClock(directory, dryRun);
+  const allClocks = tx.select().from(schema.clocks).all();
+  for (const clock of allClocks) {
+    if (!validDirs.has(clock.directory)) {
+      logger.info(`Removing orphaned clock for: ${clock.directory}`);
+      tx.delete(schema.clocks).where(eq(schema.clocks.directory, clock.directory)).run();
     }
   }
 }

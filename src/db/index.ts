@@ -122,6 +122,9 @@ async function initializeDatabase() {
 export const db = await initializeDatabase();
 export { schema };
 
+/** Transaction type for passing to functions that support transactional operations */
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 // ============================================================================
 // Drizzle Run Helper
 // ============================================================================

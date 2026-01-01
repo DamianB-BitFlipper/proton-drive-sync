@@ -46,10 +46,14 @@ export async function resetCommand(options: {
     db.delete(schema.signals).run();
     logger.info('Signals cleared.');
   } else {
-    // Clear all sync-related tables
-    db.delete(schema.clocks).run();
-    db.delete(schema.syncJobs).run();
-    db.delete(schema.processingQueue).run();
+    // Clear all sync-related tables atomically
+    db.transaction((tx) => {
+      tx.delete(schema.clocks).run();
+      tx.delete(schema.syncJobs).run();
+      tx.delete(schema.processingQueue).run();
+      tx.delete(schema.fileHashes).run();
+      tx.delete(schema.nodeMapping).run();
+    });
     logger.info('State reset.');
   }
 }

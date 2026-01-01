@@ -26,6 +26,8 @@ export interface FileChange {
   type: 'f' | 'd'; // 'f' for file, 'd' for directory
   new: boolean; // true if file is newer than the 'since' clock (i.e., newly created)
   watchRoot: string; // Which watch root this change came from (added by us, not from Watchman)
+  ino: number; // Inode number - stable across renames/moves within same filesystem
+  'content.sha1hex'?: string; // Content hash for files (null/undefined for directories)
 }
 
 interface WatchmanQueryResponse {
@@ -34,6 +36,7 @@ interface WatchmanQueryResponse {
 }
 
 export type FileChangeHandler = (file: FileChange) => void;
+export type FileChangeBatchHandler = (files: FileChange[]) => void;
 
 // ============================================================================
 // State
@@ -161,7 +164,7 @@ function unsubscribeWatchman(root: string, subName: string): Promise<void> {
 function buildWatchmanQuery(savedClock: string | null, relative: string): Record<string, unknown> {
   const query: Record<string, unknown> = {
     expression: ['anyof', ['type', 'f'], ['type', 'd']],
-    fields: ['name', 'size', 'mtime_ms', 'exists', 'type', 'new'],
+    fields: ['name', 'size', 'mtime_ms', 'exists', 'type', 'new', 'ino', 'content.sha1hex'],
   };
 
   if (savedClock) {
@@ -185,7 +188,7 @@ function buildWatchmanQuery(savedClock: string | null, relative: string): Record
  */
 export async function queryAllChanges(
   config: Config,
-  onFileChange: FileChangeHandler,
+  onFileChangeBatch: FileChangeBatchHandler,
   dryRun: boolean
 ): Promise<number> {
   let totalChanges = 0;
@@ -215,11 +218,15 @@ export async function queryAllChanges(
         setClock(watchDir, resp.clock, dryRun);
       }
 
-      // Process changes
+      // Process changes as a batch
       const files = resp.files || [];
-      for (const file of files) {
-        onFileChange({ ...file, watchRoot: watchDir });
-        totalChanges++;
+      if (files.length > 0) {
+        const fileChanges: FileChange[] = files.map((file) => ({
+          ...file,
+          watchRoot: watchDir,
+        }));
+        onFileChangeBatch(fileChanges);
+        totalChanges += files.length;
       }
     })
   );
@@ -233,11 +240,11 @@ export async function queryAllChanges(
 
 /**
  * Set up Watchman subscriptions for all configured directories.
- * Calls onFileChange for each file change detected.
+ * Calls onFileChangeBatch for each batch of file changes detected.
  */
 export async function setupWatchSubscriptions(
   config: Config,
-  onFileChange: FileChangeHandler,
+  onFileChangeBatch: FileChangeBatchHandler,
   dryRun: boolean
 ): Promise<void> {
   // Clear any existing subscriptions first
@@ -268,9 +275,14 @@ export async function setupWatchSubscriptions(
 
     const resolvedRoot = watchRoot;
 
-    for (const file of resp.files) {
+    // Process files as a batch
+    const fileChanges: FileChange[] = resp.files.map((file) => {
       const fileChange = file as unknown as Omit<FileChange, 'watchRoot'>;
-      onFileChange({ ...fileChange, watchRoot: resolvedRoot });
+      return { ...fileChange, watchRoot: resolvedRoot };
+    });
+
+    if (fileChanges.length > 0) {
+      onFileChangeBatch(fileChanges);
     }
 
     // Save the new clock so we don't see these events again on restart

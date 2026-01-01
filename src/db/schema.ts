@@ -23,6 +23,8 @@ export const SyncEventType = {
   CREATE: 'CREATE',
   UPDATE: 'UPDATE',
   DELETE: 'DELETE',
+  RENAME: 'RENAME',
+  MOVE: 'MOVE',
 } as const;
 
 export type SyncEventType = (typeof SyncEventType)[keyof typeof SyncEventType];
@@ -76,6 +78,9 @@ export const syncJobs = sqliteTable(
       .$defaultFn(() => new Date()),
     nRetries: integer('n_retries').notNull().default(0),
     lastError: text('last_error'),
+    contentHash: text('content_hash'),
+    oldLocalPath: text('old_local_path'),
+    oldRemotePath: text('old_remote_path'),
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -93,6 +98,32 @@ export const syncJobs = sqliteTable(
 export const processingQueue = sqliteTable('processing_queue', {
   localPath: text('local_path').primaryKey(),
   startedAt: integer('started_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/**
+ * File hashes table for tracking content hashes of synced files.
+ * Used to skip uploads when content hasn't changed.
+ */
+export const fileHashes = sqliteTable('file_hashes', {
+  localPath: text('local_path').primaryKey(),
+  contentHash: text('content_hash').notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/**
+ * Node mapping table for tracking Proton Drive nodeUids.
+ * Used to support rename/move operations without re-uploading.
+ */
+export const nodeMapping = sqliteTable('node_mapping', {
+  localPath: text('local_path').primaryKey(),
+  nodeUid: text('node_uid').notNull(),
+  parentNodeUid: text('parent_node_uid').notNull(),
+  isDirectory: integer('is_directory', { mode: 'boolean' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
     .notNull()
     .$defaultFn(() => new Date()),
 });

@@ -6,7 +6,7 @@
 
 import { EventEmitter } from 'events';
 import { eq, and, lte, inArray, isNull, sql } from 'drizzle-orm';
-import { db, schema, run } from '../db/index.js';
+import { db, schema, run, type Tx } from '../db/index.js';
 import { SyncJobStatus, SyncEventType } from '../db/schema.js';
 import { logger, isDebugEnabled } from '../logger.js';
 import { isPathWatched } from '../config.js';
@@ -44,15 +44,30 @@ export interface JobEvent {
 // ============================================================================
 
 export interface Job {
+  /** Unique identifier for this sync job */
   id: number;
+  /** Type of sync operation: CREATE, UPDATE, DELETE, RENAME, or MOVE */
   eventType: SyncEventType;
+  /** Absolute path to the file/directory on the local filesystem */
   localPath: string;
-  remotePath: string | null;
+  /** Path on Proton Drive where the file/directory will be synced */
+  remotePath: string;
+  /** Current status: PENDING, PROCESSING, SYNCED, or BLOCKED */
   status: SyncJobStatus;
+  /** Number of retry attempts made for this job */
   nRetries: number;
+  /** Timestamp when this job should next be attempted */
   retryAt: Date;
+  /** Error message from the last failed attempt, if any */
   lastError: string | null;
+  /** Timestamp when this job was created */
   createdAt: Date;
+  /** SHA1 hash of file content for change detection (null for directories) */
+  contentHash: string | null;
+  /** Original local path before rename/move (null for CREATE/UPDATE/DELETE) */
+  oldLocalPath: string | null;
+  /** Original remote path before rename/move (null for CREATE/UPDATE/DELETE) */
+  oldRemotePath: string | null;
 }
 
 // Re-export for backward compatibility
@@ -72,19 +87,18 @@ export const dryRunSyncedIds = new Set<number>();
 // Job Queue Functions
 // ============================================================================
 
+/** Parameters for creating a new sync job - subset of Job fields */
+export type EnqueueJobParams = Pick<
+  Job,
+  'eventType' | 'localPath' | 'remotePath' | 'contentHash' | 'oldLocalPath' | 'oldRemotePath'
+>;
+
 /**
  * Add a sync job to the queue, or update if one already exists for this localPath.
  * Uses upsert logic: if a job for localPath exists, update it; otherwise insert.
  * No-op if dryRun is true.
  */
-export function enqueueJob(
-  params: {
-    eventType: SyncEventType;
-    localPath: string;
-    remotePath: string;
-  },
-  dryRun: boolean
-): void {
+export function enqueueJob(params: EnqueueJobParams, dryRun: boolean, tx: Tx): void {
   if (dryRun) return;
 
   // Guard: only enqueue if localPath is within a configured sync_dir
@@ -95,7 +109,7 @@ export function enqueueJob(
 
   // Check if job is already being processed (only query if debug enabled)
   if (isDebugEnabled()) {
-    const inFlight = db
+    const inFlight = tx
       .select()
       .from(schema.processingQueue)
       .where(eq(schema.processingQueue.localPath, params.localPath))
@@ -108,7 +122,7 @@ export function enqueueJob(
 
   // INSERT ... ON CONFLICT DO UPDATE is a single atomic SQL statement
   const result = run(
-    db
+    tx
       .insert(schema.syncJobs)
       .values({
         eventType: params.eventType,
@@ -118,6 +132,9 @@ export function enqueueJob(
         retryAt: new Date(),
         nRetries: 0,
         lastError: null,
+        contentHash: params.contentHash ?? null,
+        oldLocalPath: params.oldLocalPath ?? null,
+        oldRemotePath: params.oldRemotePath ?? null,
       })
       .onConflictDoUpdate({
         target: schema.syncJobs.localPath,
@@ -128,6 +145,9 @@ export function enqueueJob(
           retryAt: new Date(),
           nRetries: 0,
           lastError: null,
+          contentHash: params.contentHash ?? null,
+          oldLocalPath: params.oldLocalPath ?? null,
+          oldRemotePath: params.oldRemotePath ?? null,
         },
       })
   );
@@ -143,45 +163,41 @@ export function enqueueJob(
 }
 
 /**
- * Clean up orphaned jobs on startup or config change.
- * - Moves all PROCESSING jobs to PENDING (stale from previous run)
+ * Cleans up orphaned jobs on startup.
+ * - Resets any PROCESSING jobs back to PENDING (stale since app wasn't running)
  * - Deletes PENDING jobs whose localPath doesn't match any current sync_dirs
  */
-export function cleanupOrphanedJobs(dryRun: boolean): void {
+export function cleanupOrphanedJobs(dryRun: boolean, tx: Tx): void {
   if (dryRun) return;
 
-  db.transaction((tx) => {
-    // 1. Move all PROCESSING -> PENDING (stale since app wasn't running)
-    const resetResult = run(
-      tx
-        .update(schema.syncJobs)
-        .set({ status: SyncJobStatus.PENDING })
-        .where(eq(schema.syncJobs.status, SyncJobStatus.PROCESSING))
-    );
+  // 1. Move all PROCESSING -> PENDING (stale since app wasn't running)
+  const resetResult = run(
+    tx
+      .update(schema.syncJobs)
+      .set({ status: SyncJobStatus.PENDING })
+      .where(eq(schema.syncJobs.status, SyncJobStatus.PROCESSING))
+  );
 
-    // Clear processing queue table
-    tx.delete(schema.processingQueue).run();
+  // Clear processing queue table
+  tx.delete(schema.processingQueue).run();
 
-    if (resetResult.changes > 0) {
-      logger.info(`Reset ${resetResult.changes} stale processing jobs to pending`);
-    }
+  if (resetResult.changes > 0) {
+    logger.info(`Reset ${resetResult.changes} stale processing jobs to pending`);
+  }
 
-    // 2. Delete PENDING jobs not matching any sync_dirs
-    const pendingJobs = tx
-      .select({ id: schema.syncJobs.id, localPath: schema.syncJobs.localPath })
-      .from(schema.syncJobs)
-      .where(eq(schema.syncJobs.status, SyncJobStatus.PENDING))
-      .all();
+  // 2. Delete PENDING jobs not matching any sync_dirs
+  const pendingJobs = tx
+    .select({ id: schema.syncJobs.id, localPath: schema.syncJobs.localPath })
+    .from(schema.syncJobs)
+    .where(eq(schema.syncJobs.status, SyncJobStatus.PENDING))
+    .all();
 
-    const orphanIds = pendingJobs
-      .filter((job) => !isPathWatched(job.localPath))
-      .map((job) => job.id);
+  const orphanIds = pendingJobs.filter((job) => !isPathWatched(job.localPath)).map((job) => job.id);
 
-    if (orphanIds.length > 0) {
-      run(tx.delete(schema.syncJobs).where(inArray(schema.syncJobs.id, orphanIds)));
-      logger.info(`Removed ${orphanIds.length} orphaned pending jobs`);
-    }
-  });
+  if (orphanIds.length > 0) {
+    run(tx.delete(schema.syncJobs).where(inArray(schema.syncJobs.id, orphanIds)));
+    logger.info(`Removed ${orphanIds.length} orphaned pending jobs`);
+  }
 }
 
 /**
@@ -205,6 +221,9 @@ export function getNextPendingJob(dryRun: boolean = false): Job | undefined {
         retryAt: schema.syncJobs.retryAt,
         lastError: schema.syncJobs.lastError,
         createdAt: schema.syncJobs.createdAt,
+        contentHash: schema.syncJobs.contentHash,
+        oldLocalPath: schema.syncJobs.oldLocalPath,
+        oldRemotePath: schema.syncJobs.oldRemotePath,
       })
       .from(schema.syncJobs)
       .where(
@@ -276,6 +295,9 @@ export function getNextPendingJob(dryRun: boolean = false): Job | undefined {
         retryAt: schema.syncJobs.retryAt,
         lastError: schema.syncJobs.lastError,
         createdAt: schema.syncJobs.createdAt,
+        contentHash: schema.syncJobs.contentHash,
+        oldLocalPath: schema.syncJobs.oldLocalPath,
+        oldRemotePath: schema.syncJobs.oldRemotePath,
       })
       .from(schema.syncJobs)
       .leftJoin(
@@ -324,7 +346,7 @@ export function getNextPendingJob(dryRun: boolean = false): Job | undefined {
 /**
  * Mark a job as synced (completed successfully).
  */
-export function markJobSynced(jobId: number, localPath: string, dryRun: boolean): void {
+export function markJobSynced(jobId: number, localPath: string, dryRun: boolean, tx: Tx): void {
   if (dryRun) {
     dryRunProcessingIds.delete(jobId);
     dryRunSyncedIds.add(jobId);
@@ -333,15 +355,11 @@ export function markJobSynced(jobId: number, localPath: string, dryRun: boolean)
 
   logger.debug(`Marking job ${jobId} as SYNCED (${localPath})`);
 
-  db.transaction((tx) => {
-    tx.update(schema.syncJobs)
-      .set({ status: SyncJobStatus.SYNCED, lastError: null })
-      .where(
-        and(eq(schema.syncJobs.id, jobId), eq(schema.syncJobs.status, SyncJobStatus.PROCESSING))
-      )
-      .run();
-    tx.delete(schema.processingQueue).where(eq(schema.processingQueue.localPath, localPath)).run();
-  });
+  tx.update(schema.syncJobs)
+    .set({ status: SyncJobStatus.SYNCED, lastError: null })
+    .where(and(eq(schema.syncJobs.id, jobId), eq(schema.syncJobs.status, SyncJobStatus.PROCESSING)))
+    .run();
+  tx.delete(schema.processingQueue).where(eq(schema.processingQueue.localPath, localPath)).run();
 
   jobEvents.emit('job', {
     type: 'synced',
@@ -358,8 +376,8 @@ export function markJobSynced(jobId: number, localPath: string, dryRun: boolean)
     .all().length;
 
   if (syncedCount > 1280) {
-    db.transaction((tx) => {
-      const oldestSynced = tx
+    db.transaction((t) => {
+      const oldestSynced = t
         .select({ id: schema.syncJobs.id })
         .from(schema.syncJobs)
         .where(eq(schema.syncJobs.status, SyncJobStatus.SYNCED))
@@ -368,7 +386,7 @@ export function markJobSynced(jobId: number, localPath: string, dryRun: boolean)
         .all();
 
       const idsToDelete = oldestSynced.map((row) => row.id);
-      tx.delete(schema.syncJobs).where(inArray(schema.syncJobs.id, idsToDelete)).run();
+      t.delete(schema.syncJobs).where(inArray(schema.syncJobs.id, idsToDelete)).run();
 
       logger.debug(`Cleaned up ${idsToDelete.length} old SYNCED jobs`);
     });
@@ -382,21 +400,18 @@ export function markJobBlocked(
   jobId: number,
   localPath: string,
   error: string,
-  dryRun: boolean
+  dryRun: boolean,
+  tx: Tx
 ): void {
   if (dryRun) return;
 
   logger.debug(`Marking job ${jobId} as BLOCKED (${localPath})`);
 
-  db.transaction((tx) => {
-    tx.update(schema.syncJobs)
-      .set({ status: SyncJobStatus.BLOCKED, lastError: error })
-      .where(
-        and(eq(schema.syncJobs.id, jobId), eq(schema.syncJobs.status, SyncJobStatus.PROCESSING))
-      )
-      .run();
-    tx.delete(schema.processingQueue).where(eq(schema.processingQueue.localPath, localPath)).run();
-  });
+  tx.update(schema.syncJobs)
+    .set({ status: SyncJobStatus.BLOCKED, lastError: error })
+    .where(and(eq(schema.syncJobs.id, jobId), eq(schema.syncJobs.status, SyncJobStatus.PROCESSING)))
+    .run();
+  tx.delete(schema.processingQueue).where(eq(schema.processingQueue.localPath, localPath)).run();
 
   jobEvents.emit('job', {
     type: 'blocked',
@@ -410,9 +425,9 @@ export function markJobBlocked(
 /**
  * Set the last error message for a job.
  */
-export function setJobError(jobId: number, error: string, dryRun: boolean): void {
+export function setJobError(jobId: number, error: string, dryRun: boolean, tx: Tx): void {
   if (dryRun) return;
-  db.update(schema.syncJobs).set({ lastError: error }).where(eq(schema.syncJobs.id, jobId)).run();
+  tx.update(schema.syncJobs).set({ lastError: error }).where(eq(schema.syncJobs.id, jobId)).run();
 }
 
 // ============================================================================
@@ -469,7 +484,8 @@ export function scheduleRetry(
   localPath: string,
   nRetries: number,
   errorCategory: ErrorCategory,
-  dryRun: boolean
+  dryRun: boolean,
+  tx: Tx
 ): void {
   if (dryRun) return;
 
@@ -496,13 +512,11 @@ export function scheduleRetry(
 
   const retryAt = new Date(Date.now() + delaySec * 1000);
 
-  db.transaction((tx) => {
-    tx.update(schema.syncJobs)
-      .set({ status: SyncJobStatus.PENDING, nRetries: newRetries, retryAt })
-      .where(eq(schema.syncJobs.id, jobId))
-      .run();
-    tx.delete(schema.processingQueue).where(eq(schema.processingQueue.localPath, localPath)).run();
-  });
+  tx.update(schema.syncJobs)
+    .set({ status: SyncJobStatus.PENDING, nRetries: newRetries, retryAt })
+    .where(eq(schema.syncJobs.id, jobId))
+    .run();
+  tx.delete(schema.processingQueue).where(eq(schema.processingQueue.localPath, localPath)).run();
 
   jobEvents.emit('job', {
     type: 'retry',

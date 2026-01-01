@@ -196,10 +196,10 @@ export async function createNode(
   try {
     if (isDirectory) {
       const nodeUid = await createDirectory(client, targetFolderUid, name);
-      return { success: true, nodeUid, isDirectory: true };
+      return { success: true, nodeUid, parentNodeUid: targetFolderUid, isDirectory: true };
     } else {
       const nodeUid = await uploadFile(client, targetFolderUid, localPath, name, pathStat!);
-      return { success: true, nodeUid, isDirectory: false };
+      return { success: true, nodeUid, parentNodeUid: targetFolderUid, isDirectory: false };
     }
   } catch (error) {
     return {

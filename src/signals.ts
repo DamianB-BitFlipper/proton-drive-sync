@@ -52,16 +52,18 @@ export function startSignalListener(): void {
   if (pollingInterval) return;
 
   pollingInterval = setInterval(() => {
-    const rows = db.select().from(schema.signals).all();
+    db.transaction((tx) => {
+      const rows = tx.select().from(schema.signals).all();
 
-    for (const row of rows) {
-      // Check if anyone is listening for this signal
-      if (signalEmitter.listenerCount(row.signal) > 0) {
-        // Consume the signal BEFORE broadcasting (handler may exit process)
-        db.delete(schema.signals).where(eq(schema.signals.id, row.id)).run();
-        signalEmitter.emit(row.signal);
+      for (const row of rows) {
+        // Check if anyone is listening for this signal
+        if (signalEmitter.listenerCount(row.signal) > 0) {
+          // Consume the signal BEFORE broadcasting (handler may exit process)
+          tx.delete(schema.signals).where(eq(schema.signals.id, row.id)).run();
+          signalEmitter.emit(row.signal);
+        }
       }
-    }
+    });
   }, SIGNAL_POLL_INTERVAL_MS);
 }
 
