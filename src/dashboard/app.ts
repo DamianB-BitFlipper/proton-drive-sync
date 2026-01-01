@@ -37,6 +37,7 @@ import { logger, enableIpcLogging } from '../logger.js';
 import { CONFIG_FILE, CONFIG_CHECK_SIGNAL, DEFAULT_SYNC_CONCURRENCY } from '../config.js';
 import {
   type AuthStatusUpdate,
+  type DashboardDiff,
   type DashboardJob,
   type DashboardStatus,
   type SyncStatus,
@@ -46,6 +47,8 @@ import {
   parseMessage,
 } from './ipc.js';
 import type { Config } from '../config.js';
+
+import type { JobCounts } from './views/fragments/types.js';
 
 // TSX Fragment Components
 import { Stats } from './views/fragments/Stats.js';
@@ -174,6 +177,9 @@ let currentAuthStatus: AuthStatusUpdate = { status: 'unauthenticated' };
 let currentSyncStatus: SyncStatus = 'disconnected';
 let currentConfig: Config | null = null;
 let loggedAuthUser: string | null = null; // Track logged auth to avoid duplicate logs
+
+/** Cached job counts - initialized on first SSE connection, updated via diffs */
+let cachedCounts: JobCounts | null = null;
 
 /**
  * Read and process messages from parent process via stdin.
@@ -1096,8 +1102,9 @@ app.get('/api/events', async (c) => {
     // Track processing jobs to avoid unnecessary re-renders
     let lastProcessing = '';
 
-    // Initial full push
+    // Initial full push - get full state from DB
     const initialSnapshot = snapshot();
+    cachedCounts = { ...initialSnapshot.counts }; // Cache initial counts from DB
     lastProcessing = processingIds(initialSnapshot.processing);
     pushFragments(stream, initialSnapshot, [
       FRAG.stats,
@@ -1118,9 +1125,41 @@ app.get('/api/events', async (c) => {
       FRAG.welcomeModal,
     ]);
 
-    // Job diff: push job-related fragments (processing-queue only if changed)
-    const onJobDiff = () => {
-      const s = snapshot();
+    // Job diff: apply deltas to cached counts and push updated fragments
+    const onJobDiff = (diff: DashboardDiff) => {
+      // Apply deltas to cached counts (avoid DB query for counts)
+      if (cachedCounts) {
+        cachedCounts.pending += diff.statsDelta.pending;
+        cachedCounts.processing += diff.statsDelta.processing;
+        cachedCounts.synced += diff.statsDelta.synced;
+        cachedCounts.blocked += diff.statsDelta.blocked;
+        cachedCounts.retry += diff.statsDelta.retry;
+        // Derive pendingReady from pending - retry
+        cachedCounts.pendingReady = cachedCounts.pending - cachedCounts.retry;
+
+        // Ensure non-negative values
+        cachedCounts.pending = Math.max(0, cachedCounts.pending);
+        cachedCounts.pendingReady = Math.max(0, cachedCounts.pendingReady);
+        cachedCounts.processing = Math.max(0, cachedCounts.processing);
+        cachedCounts.synced = Math.max(0, cachedCounts.synced);
+        cachedCounts.blocked = Math.max(0, cachedCounts.blocked);
+        cachedCounts.retry = Math.max(0, cachedCounts.retry);
+      }
+
+      // Build snapshot with cached counts (still need job lists from DB)
+      const s: DashboardSnapshot = {
+        counts: cachedCounts || getJobCounts(),
+        processing: getProcessingJobs(),
+        blocked: getBlockedJobs(50),
+        pending: getPendingJobs(50),
+        recent: getRecentJobs(50),
+        retry: getRetryJobs(50),
+        auth: currentAuthStatus,
+        syncStatus: currentSyncStatus,
+        dryRun: isDryRun,
+        config: currentConfig,
+        watchmanReady: hasFlag(FLAGS.WATCHMAN_RUNNING, ALL_VARIANTS),
+      };
       const curProcessing = processingIds(s.processing);
 
       // Always push stats & non-heavy lists

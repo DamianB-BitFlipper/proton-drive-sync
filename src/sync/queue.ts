@@ -5,7 +5,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { eq, and, lte, inArray, isNull, sql, desc } from 'drizzle-orm';
+import { eq, and, lte, lt, inArray, isNull, sql, desc } from 'drizzle-orm';
 import { db, schema, run, type Tx } from '../db/index.js';
 import { SyncJobStatus, SyncEventType } from '../db/schema.js';
 import { logger, isDebugEnabled } from '../logger.js';
@@ -37,6 +37,8 @@ export interface JobEvent {
   remotePath?: string;
   error?: string;
   timestamp: Date;
+  /** Whether this job was a retry (nRetries > 0) - only set for 'processing' events */
+  wasRetry?: boolean;
 }
 
 // ============================================================================
@@ -337,6 +339,7 @@ export function getNextPendingJob(dryRun: boolean = false): Job | undefined {
       localPath: job.localPath,
       remotePath: job.remotePath,
       timestamp: new Date(),
+      wasRetry: job.nRetries > 0,
     } satisfies JobEvent);
 
     return job;
@@ -368,28 +371,18 @@ export function markJobSynced(jobId: number, localPath: string, dryRun: boolean,
     timestamp: new Date(),
   } satisfies JobEvent);
 
-  // Cleanup old SYNCED jobs (watermark: 1280)
-  const syncedCount = db
-    .select()
-    .from(schema.syncJobs)
-    .where(eq(schema.syncJobs.status, SyncJobStatus.SYNCED))
-    .all().length;
+  // Cleanup SYNCED jobs older than 24 hours
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const deleted = run(
+    tx
+      .delete(schema.syncJobs)
+      .where(
+        and(eq(schema.syncJobs.status, SyncJobStatus.SYNCED), lt(schema.syncJobs.createdAt, cutoff))
+      )
+  );
 
-  if (syncedCount > 1280) {
-    db.transaction((t) => {
-      const oldestSynced = t
-        .select({ id: schema.syncJobs.id })
-        .from(schema.syncJobs)
-        .where(eq(schema.syncJobs.status, SyncJobStatus.SYNCED))
-        .orderBy(schema.syncJobs.id)
-        .limit(256)
-        .all();
-
-      const idsToDelete = oldestSynced.map((row) => row.id);
-      t.delete(schema.syncJobs).where(inArray(schema.syncJobs.id, idsToDelete)).run();
-
-      logger.debug(`Cleaned up ${idsToDelete.length} old SYNCED jobs`);
-    });
+  if (deleted.changes > 0) {
+    logger.debug(`Cleaned up ${deleted.changes} SYNCED jobs older than 24 hours`);
   }
 }
 

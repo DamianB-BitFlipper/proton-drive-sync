@@ -26,12 +26,12 @@ export const Stats: FC<{ counts: JobCounts }> = ({ counts }) => {
         </dd>
       </div>
 
-      {/* Synced */}
+      {/* Recently Synced */}
       <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-sm hover:border-green-500/50 transition-colors group relative overflow-hidden">
         <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
           <i data-lucide="check" class="w-12 h-12 text-green-500"></i>
         </div>
-        <dt class="text-sm font-medium text-gray-400">Synced</dt>
+        <dt class="text-sm font-medium text-gray-400">Recently Synced</dt>
         <dd class="mt-2 text-3xl font-bold text-white group-hover:text-green-400 transition-colors">
           {counts.synced}
         </dd>

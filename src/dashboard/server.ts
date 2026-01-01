@@ -69,6 +69,9 @@ function accumulateEvent(event: JobEvent): void {
     case 'processing':
       accumulatedDiff.statsDelta.pending--;
       accumulatedDiff.statsDelta.processing++;
+      if (event.wasRetry) {
+        accumulatedDiff.statsDelta.retry--;
+      }
       accumulatedDiff.addProcessing.push(job);
       break;
 
@@ -92,6 +95,7 @@ function accumulateEvent(event: JobEvent): void {
     case 'retry':
       accumulatedDiff.statsDelta.processing--;
       accumulatedDiff.statsDelta.pending++;
+      accumulatedDiff.statsDelta.retry++;
       accumulatedDiff.removeProcessing.push(event.jobId);
       break;
   }

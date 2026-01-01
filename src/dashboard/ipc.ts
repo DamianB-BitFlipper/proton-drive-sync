@@ -48,6 +48,7 @@ export interface DashboardDiff {
     processing: number;
     synced: number;
     blocked: number;
+    retry: number;
   };
   /** Jobs to add to the processing list */
   addProcessing: DashboardJob[];
@@ -125,7 +126,7 @@ export type ChildMessage = ReadyMessage | ErrorMessage | LogMessage;
 /** Create an empty diff */
 export function createEmptyDiff(): DashboardDiff {
   return {
-    statsDelta: { pending: 0, processing: 0, synced: 0, blocked: 0 },
+    statsDelta: { pending: 0, processing: 0, synced: 0, blocked: 0, retry: 0 },
     addProcessing: [],
     removeProcessing: [],
     addRecent: [],
@@ -140,6 +141,7 @@ export function hasDiffChanges(diff: DashboardDiff): boolean {
     diff.statsDelta.processing !== 0 ||
     diff.statsDelta.synced !== 0 ||
     diff.statsDelta.blocked !== 0 ||
+    diff.statsDelta.retry !== 0 ||
     diff.addProcessing.length > 0 ||
     diff.removeProcessing.length > 0 ||
     diff.addRecent.length > 0 ||
