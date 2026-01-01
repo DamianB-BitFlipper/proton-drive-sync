@@ -81,6 +81,7 @@ import aboutScriptsHtml from './scripts/about.scripts.txt';
 import iconSvg from './assets/icon.svg' with { type: 'text' };
 import githubSvg from './assets/github.svg' with { type: 'text' };
 import xLogoSvg from './assets/x-logo.svg' with { type: 'text' };
+import stylesCss from './assets/styles.css' with { type: 'text' };
 import damianJpgPath from './assets/damian.jpg' with { type: 'file' };
 
 // Asset map for serving embedded assets
@@ -88,6 +89,7 @@ const embeddedAssets: Record<string, { content: string; type: string }> = {
   'icon.svg': { content: iconSvg, type: 'image/svg+xml' },
   'github.svg': { content: githubSvg, type: 'image/svg+xml' },
   'x-logo.svg': { content: xLogoSvg, type: 'image/svg+xml' },
+  'styles.css': { content: stylesCss, type: 'text/css' },
 };
 
 // ============================================================================

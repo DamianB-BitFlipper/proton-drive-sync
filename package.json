@@ -48,6 +48,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@tailwindcss/cli": "^4.1.18",
     "@types/bun": "^1.3.5",
     "@types/fb-watchman": "^2.0.6",
     "@types/node": "^24.10.1",
@@ -57,6 +58,7 @@
     "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
     "prettier": "^3.7.3",
+    "tailwindcss": "^4.1.18",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.48.0"

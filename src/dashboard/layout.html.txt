@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{TITLE}}</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icon.svg" />
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/assets/styles.css" />
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
     <script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph-ext.min.js"></script>
@@ -93,32 +93,6 @@
         color: #facc15; /* yellow-400 */
       }
     </style>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              proton: {
-                DEFAULT: '#6d4aff',
-                dark: '#5a3dd6',
-                light: '#886bff',
-              },
-            },
-            fontFamily: {
-              mono: [
-                'SF Mono',
-                'Menlo',
-                'Monaco',
-                'Consolas',
-                'Liberation Mono',
-                'Courier New',
-                'monospace',
-              ],
-            },
-          },
-        },
-      };
-    </script>
   </head>
   <body class="h-full flex flex-col" hx-ext="sse" sse-connect="/api/events">
     <!-- Dry-Run Warning Banner -->

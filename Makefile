@@ -4,8 +4,12 @@
 install:
 	bun install
 
-# Build standalone binary with bun
-build:
+# Build Tailwind CSS
+build-css:
+	bunx tailwindcss -i ./src/dashboard/styles/input.css -o ./src/dashboard/assets/styles.css --minify
+
+# Build standalone binary with bun (builds CSS first)
+build: build-css
 	bun build --compile --minify ./src/index.ts --outfile ./dist/proton-drive-sync
 
 # Type-check without emitting files

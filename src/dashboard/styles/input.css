@@ -1,0 +1,102 @@
+@import 'tailwindcss';
+
+/* Custom theme configuration */
+@theme {
+  --color-proton: #6d4aff;
+  --color-proton-dark: #5a3dd6;
+  --color-proton-light: #886bff;
+
+  --font-mono:
+    'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+}
+
+/* Custom scrollbar styles */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Hide tab labels when viewport is too narrow */
+.tab-label {
+  display: none;
+}
+@media (min-width: 1250px) {
+  .tab-label {
+    display: inline;
+  }
+}
+
+/* Hide GitHub text before title */
+.socials-text {
+  display: none;
+}
+@media (min-width: 700px) {
+  .socials-text {
+    display: inline;
+  }
+}
+
+/* Hide title when narrower */
+.header-title {
+  display: none;
+}
+@media (min-width: 1000px) {
+  .header-title {
+    display: block;
+  }
+}
+
+/* Hide auth badge when very narrow */
+.auth-badge {
+  display: none;
+}
+@media (min-width: 900px) {
+  .auth-badge {
+    display: block;
+  }
+}
+
+/* Hide connected badge at the very end */
+.connected-badge {
+  display: none;
+}
+@media (min-width: 600px) {
+  .connected-badge {
+    display: flex;
+  }
+}
+
+/* Hide GitHub badge first (least priority in header) */
+.github-badge-header {
+  display: none;
+}
+@media (min-width: 1400px) {
+  .github-badge-header {
+    display: flex;
+  }
+}
+
+/* Hide X badge second */
+.x-badge-header {
+  display: none;
+}
+@media (min-width: 1300px) {
+  .x-badge-header {
+    display: flex;
+  }
+}
+
+/* GitHub badge star hover effect */
+.github-badge:hover svg.icon-star {
+  color: #facc15; /* yellow-400 */
+}
