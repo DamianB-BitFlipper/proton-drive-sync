@@ -11,6 +11,7 @@ import {
   createOpenPGPCrypto,
   initCrypto,
 } from '../auth.js';
+import type { Session } from '../auth.js';
 import { storeCredentials, deleteStoredCredentials } from '../keychain.js';
 import type { StoredCredentials } from '../keychain.js';
 import type { ProtonDriveClient, ApiError } from '../proton/types.js';
@@ -19,6 +20,49 @@ import { logger } from '../logger.js';
 // Re-export for use in start.ts
 export { getStoredCredentials } from '../keychain.js';
 export type { ProtonDriveClient } from '../proton/types.js';
+
+/**
+ * Create a ProtonDriveClient from a session
+ * Shared helper used by both createClientFromLogin and createClientFromTokens
+ */
+async function createProtonDriveClientFromSession(
+  session: Session,
+  sdkDebug: boolean = false
+): Promise<ProtonDriveClient> {
+  // Load the SDK
+  type SDKModule = typeof import('@protontech/drive-sdk');
+  const sdk: SDKModule = await import('@protontech/drive-sdk');
+
+  // Import telemetry module for logging configuration (not exported from main index)
+  const telemetryModule = await import('@protontech/drive-sdk/dist/telemetry.js');
+
+  const httpClient = createProtonHttpClient(session);
+  const openPGPCryptoModule = createOpenPGPCrypto();
+  const account = createProtonAccount(session, openPGPCryptoModule);
+  const srpModuleInstance = createSrpModule();
+
+  // Create telemetry with appropriate log level
+  const logLevel = sdkDebug ? telemetryModule.LogLevel.DEBUG : telemetryModule.LogLevel.ERROR;
+  const telemetry = new telemetryModule.Telemetry({
+    logFilter: new telemetryModule.LogFilter({ globalLevel: logLevel }),
+    logHandlers: [new telemetryModule.ConsoleLogHandler()],
+    metricHandlers: [], // No metrics logging
+  });
+
+  const client = new sdk.ProtonDriveClient({
+    httpClient,
+    entitiesCache: new sdk.MemoryCache(),
+    cryptoCache: new sdk.MemoryCache(),
+    // @ts-expect-error - PrivateKey types differ between openpgp imports
+    account,
+    // @ts-expect-error - PrivateKey types differ between openpgp imports
+    openPGPCryptoModule,
+    srpModule: srpModuleInstance,
+    telemetry,
+  });
+
+  return client as unknown as ProtonDriveClient;
+}
 
 /**
  * Create a ProtonDriveClient from username/password
@@ -72,40 +116,10 @@ export async function createClientFromLogin(
   }
   const credentials = auth.getReusableCredentials();
 
-  // Load the SDK
-  type SDKModule = typeof import('@protontech/drive-sdk');
-  const sdk: SDKModule = await import('@protontech/drive-sdk');
-
-  // Import telemetry module for logging configuration (not exported from main index)
-  const telemetryModule = await import('@protontech/drive-sdk/dist/telemetry.js');
-
-  const httpClient = createProtonHttpClient(session);
-  const openPGPCryptoModule = createOpenPGPCrypto();
-  const account = createProtonAccount(session, openPGPCryptoModule);
-  const srpModuleInstance = createSrpModule();
-
-  // Create telemetry with appropriate log level
-  const logLevel = sdkDebug ? telemetryModule.LogLevel.DEBUG : telemetryModule.LogLevel.ERROR;
-  const telemetry = new telemetryModule.Telemetry({
-    logFilter: new telemetryModule.LogFilter({ globalLevel: logLevel }),
-    logHandlers: [new telemetryModule.ConsoleLogHandler()],
-    metricHandlers: [], // No metrics logging
-  });
-
-  const client = new sdk.ProtonDriveClient({
-    httpClient,
-    entitiesCache: new sdk.MemoryCache(),
-    cryptoCache: new sdk.MemoryCache(),
-    // @ts-expect-error - PrivateKey types differ between openpgp imports
-    account,
-    // @ts-expect-error - PrivateKey types differ between openpgp imports
-    openPGPCryptoModule,
-    srpModule: srpModuleInstance,
-    telemetry,
-  });
+  const client = await createProtonDriveClientFromSession(session, sdkDebug);
 
   return {
-    client: client as unknown as ProtonDriveClient,
+    client,
     credentials: { ...credentials, username },
   };
 }
@@ -129,39 +143,7 @@ export async function createClientFromTokens(
   const auth = new ProtonAuth();
   const session = await auth.restoreSession(credentials);
 
-  // Load the SDK
-  type SDKModule = typeof import('@protontech/drive-sdk');
-  const sdk: SDKModule = await import('@protontech/drive-sdk');
-
-  // Import telemetry module for logging configuration (not exported from main index)
-  const telemetryModule = await import('@protontech/drive-sdk/dist/telemetry.js');
-
-  const httpClient = createProtonHttpClient(session);
-  const openPGPCryptoModule = createOpenPGPCrypto();
-  const account = createProtonAccount(session, openPGPCryptoModule);
-  const srpModuleInstance = createSrpModule();
-
-  // Create telemetry with appropriate log level
-  const logLevel = sdkDebug ? telemetryModule.LogLevel.DEBUG : telemetryModule.LogLevel.ERROR;
-  const telemetry = new telemetryModule.Telemetry({
-    logFilter: new telemetryModule.LogFilter({ globalLevel: logLevel }),
-    logHandlers: [new telemetryModule.ConsoleLogHandler()],
-    metricHandlers: [], // No metrics logging
-  });
-
-  const client = new sdk.ProtonDriveClient({
-    httpClient,
-    entitiesCache: new sdk.MemoryCache(),
-    cryptoCache: new sdk.MemoryCache(),
-    // @ts-expect-error - PrivateKey types differ between openpgp imports
-    account,
-    // @ts-expect-error - PrivateKey types differ between openpgp imports
-    openPGPCryptoModule,
-    srpModule: srpModuleInstance,
-    telemetry,
-  });
-
-  return client as unknown as ProtonDriveClient;
+  return createProtonDriveClientFromSession(session, sdkDebug);
 }
 
 export async function authCommand(): Promise<void> {

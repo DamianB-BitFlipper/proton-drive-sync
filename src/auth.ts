@@ -61,7 +61,7 @@ interface AddressData {
   keys: AddressKeyInfo[];
 }
 
-interface Session {
+export interface Session {
   UID: string;
   AccessToken: string;
   RefreshToken: string;
@@ -1041,14 +1041,69 @@ export class ProtonAuth {
   }
 
   /**
-   * Fetch user data after successful authentication
+   * Process addresses and their keys into AddressData format
+   * Shared helper used by _fetchUserAndKeys and restoreSession
    */
-  async fetchUserData(): Promise<void> {
-    if (!this.session?.password) {
-      throw new Error('Password not available for key decryption');
+  private async _processAddressKeys(
+    addresses: Address[],
+    keySalts: KeySalt[],
+    keyPassword: string,
+    password?: string
+  ): Promise<AddressData[]> {
+    const result: AddressData[] = [];
+
+    for (const address of addresses) {
+      const addressData: AddressData = {
+        ID: address.ID,
+        Email: address.Email,
+        Type: address.Type,
+        Status: address.Status,
+        keys: [],
+      };
+
+      for (const key of address.Keys || []) {
+        try {
+          let addressKeyPassword: string | undefined;
+
+          // If the key has a Token, decrypt it using the user's primary key
+          if (key.Token && this.session?.primaryKey) {
+            const decryptedToken = await openpgp.decrypt({
+              message: await openpgp.readMessage({ armoredMessage: key.Token }),
+              decryptionKeys: this.session.primaryKey,
+            });
+            addressKeyPassword = decryptedToken.data as string;
+          } else if (password) {
+            // Use password-derived key if password is available
+            const keySalt = keySalts.find((s) => s.ID === key.ID);
+            if (keySalt?.KeySalt) {
+              addressKeyPassword = await computeKeyPassword(password, keySalt.KeySalt);
+            }
+          }
+
+          // Fallback to the user's key password
+          if (!addressKeyPassword) {
+            addressKeyPassword = keyPassword;
+          }
+
+          if (addressKeyPassword) {
+            // Store armored key and passphrase instead of decrypted key
+            // This allows the SDK to decrypt using its own openpgp instance
+            addressData.keys.push({
+              ID: key.ID,
+              Primary: key.Primary,
+              armoredKey: key.PrivateKey,
+              passphrase: addressKeyPassword,
+            });
+          }
+        } catch (error) {
+          logger.warn(`Failed to process address key ${key.ID}:`, (error as Error).message);
+        }
+      }
+
+      result.push(addressData);
     }
-    // This is called after 2FA to complete the session setup
-    // The password should have been stored during initial login attempt
+
+    return result;
   }
 
   /**
@@ -1112,55 +1167,13 @@ export class ProtonAuth {
       }
     }
 
-    // Process addresses and their keys
-    this.session.addresses = [];
-    for (const address of addresses) {
-      const addressData: AddressData = {
-        ID: address.ID,
-        Email: address.Email,
-        Type: address.Type,
-        Status: address.Status,
-        keys: [],
-      };
-
-      for (const key of address.Keys || []) {
-        const keySalt = keySalts.find((s) => s.ID === key.ID);
-
-        try {
-          let addressKeyPassword: string | undefined;
-
-          // If the key has a Token, decrypt it using the user's primary key
-          if (key.Token && this.session.primaryKey) {
-            const decryptedToken = await openpgp.decrypt({
-              message: await openpgp.readMessage({ armoredMessage: key.Token }),
-              decryptionKeys: this.session.primaryKey,
-            });
-            addressKeyPassword = decryptedToken.data as string;
-          } else if (keySalt?.KeySalt) {
-            // Use password-derived key
-            addressKeyPassword = await computeKeyPassword(password, keySalt.KeySalt);
-          } else {
-            // Fallback to the user's key password
-            addressKeyPassword = this.session.keyPassword;
-          }
-
-          if (addressKeyPassword) {
-            // Store armored key and passphrase instead of decrypted key
-            // This allows the SDK to decrypt using its own openpgp instance
-            addressData.keys.push({
-              ID: key.ID,
-              Primary: key.Primary,
-              armoredKey: key.PrivateKey,
-              passphrase: addressKeyPassword,
-            });
-          }
-        } catch (error) {
-          logger.warn(`Failed to process address key ${key.ID}:`, (error as Error).message);
-        }
-      }
-
-      this.session.addresses.push(addressData);
-    }
+    // Process addresses and their keys using the shared helper
+    this.session.addresses = await this._processAddressKeys(
+      addresses,
+      keySalts,
+      this.session.keyPassword || '',
+      password
+    );
   }
 
   /**
@@ -1258,55 +1271,57 @@ export class ProtonAuth {
       >('GET', 'core/v4/addresses');
       const addresses = addressesResponse.Addresses || [];
 
-      // Process addresses and their keys
-      this.session.addresses = [];
-      for (const address of addresses) {
-        const addressData: AddressData = {
-          ID: address.ID,
-          Email: address.Email,
-          Type: address.Type,
-          Status: address.Status,
-          keys: [],
-        };
-
-        for (const key of address.Keys || []) {
-          try {
-            let addressKeyPassword: string | undefined;
-
-            // If the key has a Token, decrypt it using the user's primary key
-            if (key.Token && this.session.primaryKey) {
-              const decryptedToken = await openpgp.decrypt({
-                message: await openpgp.readMessage({ armoredMessage: key.Token }),
-                decryptionKeys: this.session.primaryKey,
-              });
-              addressKeyPassword = decryptedToken.data as string;
-            } else {
-              // Fallback to the user's key password
-              addressKeyPassword = SaltedKeyPass;
-            }
-
-            if (addressKeyPassword) {
-              // Store armored key and passphrase instead of decrypted key
-              addressData.keys.push({
-                ID: key.ID,
-                Primary: key.Primary,
-                armoredKey: key.PrivateKey,
-                passphrase: addressKeyPassword,
-              });
-            }
-          } catch (error) {
-            logger.warn(`Failed to process key ${key.ID}:`, (error as Error).message);
-          }
-        }
-
-        this.session.addresses.push(addressData);
-      }
+      // Process addresses and their keys using the shared helper
+      // Note: No keySalts needed here since we use SaltedKeyPass directly
+      this.session.addresses = await this._processAddressKeys(addresses, [], SaltedKeyPass);
 
       return this.session;
     } catch (error) {
       this.session = null;
       throw new Error(`Failed to restore session: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Shared helper to refresh a session's tokens
+   * Used by refreshToken, refreshParentToken, and forkNewChildSession
+   */
+  private async _refreshSessionTokens(
+    uid: string,
+    refreshToken: string
+  ): Promise<{ accessToken: string; refreshToken: string }> {
+    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-pm-appversion': APP_VERSION,
+        'x-pm-uid': uid,
+      },
+      body: JSON.stringify({
+        ResponseType: 'token',
+        GrantType: 'refresh_token',
+        RefreshToken: refreshToken,
+        RedirectURI: 'https://protonmail.com',
+      }),
+    });
+
+    const json = (await response.json()) as ApiResponse & {
+      AccessToken?: string;
+      RefreshToken?: string;
+    };
+
+    if (!response.ok || json.Code !== 1000) {
+      if (json.Code === INVALID_REFRESH_TOKEN_CODE) {
+        throw new Error('INVALID_REFRESH_TOKEN');
+      }
+      throw new Error(json.Error || 'Token refresh failed');
+    }
+
+    if (!json.AccessToken || !json.RefreshToken) {
+      throw new Error('Token refresh response missing tokens');
+    }
+
+    return { accessToken: json.AccessToken, refreshToken: json.RefreshToken };
   }
 
   /**
@@ -1318,45 +1333,21 @@ export class ProtonAuth {
       throw new Error('No refresh token available');
     }
 
-    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-pm-appversion': APP_VERSION,
-        'x-pm-uid': this.session.UID,
-      },
-      body: JSON.stringify({
-        ResponseType: 'token',
-        GrantType: 'refresh_token',
-        RefreshToken: this.session.RefreshToken,
-        RedirectURI: 'https://protonmail.com',
-      }),
-    });
-
-    const json = (await response.json()) as ApiResponse & {
-      AccessToken?: string;
-      RefreshToken?: string;
-    };
-
-    if (!response.ok || json.Code !== 1000) {
-      // Check if this is an invalid refresh token error (code 10013)
-      if (json.Code === INVALID_REFRESH_TOKEN_CODE) {
+    try {
+      const tokens = await this._refreshSessionTokens(this.session.UID, this.session.RefreshToken);
+      this.session.AccessToken = tokens.accessToken;
+      this.session.RefreshToken = tokens.refreshToken;
+      return this.session;
+    } catch (error) {
+      // Check if this is an invalid refresh token error
+      if (this.isInvalidRefreshTokenError(error)) {
         logger.info(
           'Child session refresh token expired, attempting to fork new session from parent...'
         );
         return await this.attemptForkRecovery();
       }
-      throw new Error(json.Error || 'Token refresh failed');
+      throw error;
     }
-
-    if (!json.AccessToken || !json.RefreshToken) {
-      throw new Error('Token refresh response missing tokens');
-    }
-
-    this.session.AccessToken = json.AccessToken;
-    this.session.RefreshToken = json.RefreshToken;
-
-    return this.session;
   }
 
   /**
@@ -1395,39 +1386,19 @@ export class ProtonAuth {
       throw new Error('No parent refresh token available');
     }
 
-    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-pm-appversion': APP_VERSION,
-        'x-pm-uid': this.parentSession.UID,
-      },
-      body: JSON.stringify({
-        ResponseType: 'token',
-        GrantType: 'refresh_token',
-        RefreshToken: this.parentSession.RefreshToken,
-        RedirectURI: 'https://protonmail.com',
-      }),
-    });
-
-    const json = (await response.json()) as ApiResponse & {
-      AccessToken?: string;
-      RefreshToken?: string;
-    };
-
-    if (!response.ok || json.Code !== 1000) {
-      if (json.Code === INVALID_REFRESH_TOKEN_CODE) {
+    try {
+      const tokens = await this._refreshSessionTokens(
+        this.parentSession.UID,
+        this.parentSession.RefreshToken
+      );
+      this.parentSession.AccessToken = tokens.accessToken;
+      this.parentSession.RefreshToken = tokens.refreshToken;
+    } catch (error) {
+      if (this.isInvalidRefreshTokenError(error)) {
         throw new Error('Parent session expired. Please re-authenticate.');
       }
-      throw new Error(json.Error || 'Parent token refresh failed');
+      throw error;
     }
-
-    if (!json.AccessToken || !json.RefreshToken) {
-      throw new Error('Parent token refresh response missing tokens');
-    }
-
-    this.parentSession.AccessToken = json.AccessToken;
-    this.parentSession.RefreshToken = json.RefreshToken;
   }
 
   /**
@@ -1558,37 +1529,19 @@ export class ProtonAuth {
 
     try {
       // First, try to refresh the parent session to ensure it's still valid
-      const parentRefreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-pm-appversion': APP_VERSION,
-          'x-pm-uid': this.parentSession.UID,
-        },
-        body: JSON.stringify({
-          ResponseType: 'token',
-          GrantType: 'refresh_token',
-          RefreshToken: this.parentSession.RefreshToken,
-          RedirectURI: 'https://protonmail.com',
-        }),
-      });
-
-      const parentRefreshJson = (await parentRefreshResponse.json()) as ApiResponse & {
-        AccessToken?: string;
-        RefreshToken?: string;
-      };
-
-      if (parentRefreshResponse.ok && parentRefreshJson.Code === 1000) {
-        // Update parent session tokens
-        if (parentRefreshJson.AccessToken) {
-          this.parentSession.AccessToken = parentRefreshJson.AccessToken;
-        }
-        if (parentRefreshJson.RefreshToken) {
-          this.parentSession.RefreshToken = parentRefreshJson.RefreshToken;
-        }
-      } else {
+      try {
+        const tokens = await this._refreshSessionTokens(
+          this.parentSession.UID,
+          this.parentSession.RefreshToken
+        );
+        this.parentSession.AccessToken = tokens.accessToken;
+        this.parentSession.RefreshToken = tokens.refreshToken;
+      } catch (error) {
         // Parent session is also expired - need full re-auth
-        throw new Error('Parent session expired - re-authentication required');
+        if (this.isInvalidRefreshTokenError(error)) {
+          throw new Error('Parent session expired - re-authentication required');
+        }
+        throw error;
       }
 
       // Push fork request using parent session
@@ -1616,7 +1569,7 @@ export class ProtonAuth {
       logger.error(`Failed to fork child session: ${message}`);
 
       // Clear parent session if it's expired
-      if (message.includes('Parent session expired') || message.includes('10013')) {
+      if (message.includes('Parent session expired') || message.includes('INVALID_REFRESH_TOKEN')) {
         this.parentSession = null;
       }
 
