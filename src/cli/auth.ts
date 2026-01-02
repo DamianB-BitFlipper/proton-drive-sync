@@ -23,10 +23,16 @@ export type { ProtonDriveClient } from '../proton/types.js';
 /**
  * Create a ProtonDriveClient from username/password
  * Returns both the client and credentials for storage
+ *
+ * @param username - Proton username/email
+ * @param pwd - Login password
+ * @param mailboxPwd - Mailbox password (only for two-password mode accounts)
+ * @param sdkDebug - Enable SDK debug logging
  */
 export async function createClientFromLogin(
   username: string,
   pwd: string,
+  mailboxPwd?: string,
   sdkDebug: boolean = false
 ): Promise<{ client: ProtonDriveClient; credentials: StoredCredentials }> {
   await initCrypto();
@@ -36,9 +42,25 @@ export async function createClientFromLogin(
   try {
     await auth.login(username, pwd);
   } catch (error) {
-    if ((error as ApiError).requires2FA) {
+    const apiError = error as ApiError;
+
+    if (apiError.requires2FA) {
       const code = await input({ message: 'Enter 2FA code (Security Key not supported):' });
-      await auth.submit2FA(code);
+      try {
+        await auth.submit2FA(code);
+      } catch (error2FA) {
+        // After 2FA, might still need mailbox password (2FA + two-password mode)
+        if ((error2FA as ApiError).requiresMailboxPassword) {
+          if (!mailboxPwd) throw error2FA;
+          await auth.submitMailboxPassword(mailboxPwd);
+        } else {
+          throw error2FA;
+        }
+      }
+    } else if (apiError.requiresMailboxPassword) {
+      // Two-password mode - need mailbox password
+      if (!mailboxPwd) throw error;
+      await auth.submitMailboxPassword(mailboxPwd);
     } else {
       throw error;
     }
@@ -95,6 +117,13 @@ export async function createClientFromTokens(
   credentials: StoredCredentials,
   sdkDebug: boolean = false
 ): Promise<ProtonDriveClient> {
+  // Force re-auth for old credentials without passwordMode
+  if (credentials.passwordMode === undefined) {
+    throw new Error(
+      'Stored credentials are outdated. Please re-authenticate with: proton-drive-sync auth'
+    );
+  }
+
   await initCrypto();
 
   const auth = new ProtonAuth();
@@ -136,8 +165,10 @@ export async function createClientFromTokens(
 }
 
 export async function authCommand(): Promise<void> {
-  const username = await input({ message: 'Proton username:' });
-  const pwd = await password({ message: 'Password:' });
+  // Read from environment variables first, then prompt interactively
+  const username = process.env.PROTON_USERNAME || (await input({ message: 'Proton username:' }));
+  const pwd = process.env.PROTON_PASSWORD || (await password({ message: 'Password:' }));
+  const envMailboxPwd = process.env.PROTON_MAILBOX_PASSWORD;
 
   if (!username || !pwd) {
     logger.error('Username and password are required.');
@@ -148,7 +179,7 @@ export async function authCommand(): Promise<void> {
 
   // Authenticate and get tokens
   try {
-    const { credentials } = await createClientFromLogin(username, pwd);
+    const { credentials } = await createClientFromLogin(username, pwd, envMailboxPwd);
 
     // Save tokens and username to keychain
     await deleteStoredCredentials();
@@ -156,10 +187,33 @@ export async function authCommand(): Promise<void> {
     logger.info('Credentials saved securely.');
   } catch (error) {
     const apiError = error as ApiError;
-    const message = apiError.message || 'Unknown error';
-    const code = apiError.code ? ` (code: ${apiError.code})` : '';
-    logger.debug('Full authentication error:', apiError);
-    logger.error(`Authentication failed${code}: ${message}`);
-    process.exit(1);
+
+    if (apiError.requiresMailboxPassword) {
+      // Two-password mode detected - prompt for mailbox password
+      logger.info('Two-password mode detected.');
+      const mailboxPwd = envMailboxPwd || (await password({ message: 'Mailbox password:' }));
+
+      try {
+        const { credentials } = await createClientFromLogin(username, pwd, mailboxPwd);
+
+        // Save tokens and username to keychain
+        await deleteStoredCredentials();
+        await storeCredentials(credentials);
+        logger.info('Credentials saved securely.');
+      } catch (innerError) {
+        const innerApiError = innerError as ApiError;
+        const message = innerApiError.message || 'Unknown error';
+        const code = innerApiError.code ? ` (code: ${innerApiError.code})` : '';
+        logger.debug('Full authentication error:', innerApiError);
+        logger.error(`Authentication failed${code}: ${message}`);
+        process.exit(1);
+      }
+    } else {
+      const message = apiError.message || 'Unknown error';
+      const code = apiError.code ? ` (code: ${apiError.code})` : '';
+      logger.debug('Full authentication error:', apiError);
+      logger.error(`Authentication failed${code}: ${message}`);
+      process.exit(1);
+    }
   }
 }

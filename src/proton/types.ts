@@ -166,5 +166,6 @@ export interface ParsedPath {
 
 export interface ApiError extends Error {
   requires2FA?: boolean;
+  requiresMailboxPassword?: boolean;
   code?: number;
 }

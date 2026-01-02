@@ -72,6 +72,7 @@ interface Session {
   primaryKey?: openpgp.PrivateKey;
   addresses?: AddressData[];
   password?: string;
+  passwordMode?: number; // 1 = Single, 2 = Dual (two-password mode)
 }
 
 interface User {
@@ -111,6 +112,7 @@ interface ApiError extends Error {
   response?: ApiResponse;
   requires2FA?: boolean;
   twoFAInfo?: TwoFAInfo;
+  requiresMailboxPassword?: boolean;
 }
 
 interface ApiResponse {
@@ -131,6 +133,7 @@ interface AuthResponse extends ApiResponse {
   UserID: string;
   Scope: string;
   ServerProof: string;
+  PasswordMode?: number; // 1 = Single, 2 = Dual (two-password mode)
   '2FA'?: TwoFAInfo;
 }
 
@@ -148,6 +151,9 @@ interface ReusableCredentials {
   // Shared credentials
   SaltedKeyPass: string;
   UserID: string;
+
+  // Password mode: 1 = Single, 2 = Dual (two-password mode)
+  passwordMode: number;
 }
 
 // ============================================================================
@@ -893,6 +899,7 @@ export class ProtonAuth {
         UID: authResponse.UID,
         AccessToken: authResponse.AccessToken,
         RefreshToken: authResponse.RefreshToken,
+        passwordMode: authResponse.PasswordMode ?? 1,
       };
 
       const error = new Error('2FA required') as ApiError;
@@ -903,13 +910,33 @@ export class ProtonAuth {
       throw error;
     }
 
-    // Store as parent session first
+    // Check for two-password mode (PasswordMode: 1 = Single, 2 = Dual)
+    const passwordMode = authResponse.PasswordMode ?? 1;
+    if (passwordMode === 2) {
+      // Two-password mode - need separate mailbox password for key decryption
+      this.parentSession = {
+        UID: authResponse.UID,
+        AccessToken: authResponse.AccessToken,
+        RefreshToken: authResponse.RefreshToken,
+        UserID: authResponse.UserID,
+        Scope: authResponse.Scope,
+        passwordMode: 2,
+      };
+      this.session = { ...this.parentSession };
+
+      const error = new Error('Mailbox password required') as ApiError;
+      error.requiresMailboxPassword = true;
+      throw error;
+    }
+
+    // Store as parent session first (single password mode)
     this.parentSession = {
       UID: authResponse.UID,
       AccessToken: authResponse.AccessToken,
       RefreshToken: authResponse.RefreshToken,
       UserID: authResponse.UserID,
       Scope: authResponse.Scope,
+      passwordMode: 1,
     };
 
     // Fetch user data and keys using parent session temporarily
@@ -956,9 +983,19 @@ export class ProtonAuth {
       RefreshToken: this.session.RefreshToken,
       UserID: this.session.UserID,
       Scope: this.session.Scope,
+      passwordMode: this.session.passwordMode,
     };
 
+    // Check if this is a two-password mode account
+    if (this.session.passwordMode === 2) {
+      // Still need mailbox password - throw to let caller handle
+      const error = new Error('Mailbox password required') as ApiError;
+      error.requiresMailboxPassword = true;
+      throw error;
+    }
+
     // Now fetch user data and decrypt keys (this was deferred during login due to 2FA)
+    // Single password mode - use stored login password for key decryption
     if (this.session.password) {
       await this._fetchUserAndKeys(this.session.password);
 
@@ -972,6 +1009,33 @@ export class ProtonAuth {
       logger.info('Forking child session from parent...');
       await this.forkNewChildSession();
     }
+
+    return this.session;
+  }
+
+  /**
+   * Submit mailbox password for two-password mode accounts
+   */
+  async submitMailboxPassword(mailboxPassword: string): Promise<Session> {
+    if (!this.session?.UID) {
+      throw new Error('No pending authentication - call login() first');
+    }
+    if (this.session.passwordMode !== 2) {
+      throw new Error('Mailbox password not required for this account');
+    }
+
+    // Use MAILBOX password (not login password) for key decryption
+    await this._fetchUserAndKeys(mailboxPassword);
+
+    // Update parent session with key data
+    this.parentSession!.keyPassword = this.session.keyPassword;
+    this.parentSession!.user = this.session.user;
+    this.parentSession!.primaryKey = this.session.primaryKey;
+    this.parentSession!.addresses = this.session.addresses;
+
+    // Fork a child session for API operations
+    logger.info('Forking child session from parent...');
+    await this.forkNewChildSession();
 
     return this.session;
   }
@@ -1128,6 +1192,7 @@ export class ProtonAuth {
       childRefreshToken: this.session.RefreshToken,
       SaltedKeyPass: this.session.keyPassword,
       UserID: this.session.UserID,
+      passwordMode: this.session.passwordMode ?? 1,
     };
   }
 

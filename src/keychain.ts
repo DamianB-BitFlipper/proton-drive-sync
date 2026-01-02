@@ -28,6 +28,9 @@ export interface StoredCredentials {
   SaltedKeyPass: string;
   UserID: string;
   username: string;
+
+  // Password mode: 1 = Single, 2 = Dual (two-password mode)
+  passwordMode: number;
 }
 
 export async function getStoredCredentials(): Promise<StoredCredentials | null> {
