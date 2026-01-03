@@ -251,103 +251,30 @@ install_watchman() {
 }
 
 # ============================================================================
-# Install libsecret (Linux only, required for credential storage)
+# Install libsecret and keyring dependencies (Linux only)
 # ============================================================================
 
-install_libsecret() {
-	local headless_mode=${1:-false}
-
+install_linux_dependencies() {
 	if [ "$os" != "linux" ]; then
 		return
 	fi
 
-	echo -e "${MUTED}Checking for libsecret (required for credential storage)...${NC}"
-
-	# Determine packages to install
-	local base_packages_apt="libsecret-1-0 gnome-keyring"
-	local base_packages_dnf="libsecret gnome-keyring"
-	local base_packages_pacman="libsecret gnome-keyring"
-
-	if [ "$headless_mode" = "true" ]; then
-		base_packages_apt="$base_packages_apt dbus-x11"
-		base_packages_dnf="$base_packages_dnf dbus-x11"
-		base_packages_pacman="$base_packages_pacman dbus"
-	fi
-
-	# Check if libsecret is already available
-	if ldconfig -p 2>/dev/null | grep -q libsecret; then
-		echo -e "${MUTED}libsecret is already installed${NC}"
-		# Still need to install dbus-x11 and gnome-keyring for headless mode
-		if [ "$headless_mode" = "true" ]; then
-			echo -e "${MUTED}Installing dbus and gnome-keyring for headless keyring support...${NC}"
-			if command -v apt-get >/dev/null 2>&1; then
-				sudo apt-get update
-				sudo apt-get install -y dbus-x11 gnome-keyring
-			elif command -v dnf >/dev/null 2>&1; then
-				sudo dnf install -y dbus-x11 gnome-keyring
-			elif command -v pacman >/dev/null 2>&1; then
-				sudo pacman -Sy --noconfirm dbus gnome-keyring
-			fi
-		fi
-		return
-	fi
-
-	echo -e "${MUTED}Installing libsecret and gnome-keyring...${NC}"
+	echo -e "${MUTED}Installing keyring dependencies (libsecret, gnome-keyring, dbus-x11)...${NC}"
 
 	if command -v apt-get >/dev/null 2>&1; then
 		sudo apt-get update
-		sudo apt-get install -y $base_packages_apt
+		sudo apt-get install -y libsecret-1-0 gnome-keyring dbus-x11
 	elif command -v dnf >/dev/null 2>&1; then
-		sudo dnf install -y $base_packages_dnf
+		sudo dnf install -y libsecret gnome-keyring dbus-x11
 	elif command -v pacman >/dev/null 2>&1; then
-		sudo pacman -Sy --noconfirm $base_packages_pacman
+		sudo pacman -Sy --noconfirm libsecret gnome-keyring dbus
 	else
-		echo -e "${ORANGE}Warning: Could not install libsecret automatically${NC}"
-		echo -e "${MUTED}Please install libsecret manually for your distribution${NC}"
+		echo -e "${ORANGE}Warning: Could not install dependencies automatically${NC}"
+		echo -e "${MUTED}Please install libsecret, gnome-keyring, and dbus-x11 manually${NC}"
 	fi
 }
 
-# ============================================================================
-# Setup headless keyring (Linux only, for headless/server installations)
-# ============================================================================
-
-setup_headless_keyring() {
-	local keyring_password="$1"
-
-	if [ "$os" != "linux" ]; then
-		return
-	fi
-
-	echo -e "${MUTED}Setting up headless keyring support...${NC}"
-
-	local data_dir="$HOME/.local/share/proton-drive-sync"
-	local systemd_dir="$HOME/.config/systemd/user"
-	local keyring_init_script="$data_dir/keyring_init.sh"
-	local keyring_env_file="$data_dir/keyring_env"
-	local keyring_service="$systemd_dir/gnome-keyring-headless.service"
-
-	# Create directories
-	mkdir -p "$data_dir"
-	mkdir -p "$systemd_dir"
-
-	# Download and configure keyring init script
-	curl -fsSL "$ASSETS_URL/keyring_init.sh" -o "$keyring_init_script"
-	sed -i "s|{{KEYRING_PASSWORD}}|$keyring_password|g" "$keyring_init_script"
-	sed -i "s|{{KEYRING_ENV_FILE}}|$keyring_env_file|g" "$keyring_init_script"
-	chmod 700 "$keyring_init_script"
-
-	# Download and configure systemd service
-	curl -fsSL "$ASSETS_URL/gnome-keyring-headless.service" -o "$keyring_service"
-	sed -i "s|{{KEYRING_INIT_SCRIPT}}|$keyring_init_script|g" "$keyring_service"
-
-	# Enable the keyring service
-	systemctl --user daemon-reload
-	systemctl --user enable gnome-keyring-headless.service
-
-	echo -e "${MUTED}Headless keyring support configured${NC}"
-}
-
-# Install dependencies (libsecret installed later after headless choice is made)
+# Install Watchman first
 install_watchman
 
 INSTALL_DIR=$HOME/.local/bin
@@ -506,7 +433,10 @@ echo -e ""
 echo -e "${MUTED}Proton Drive Sync${NC} installed successfully!"
 echo -e ""
 
-# Ask about headless/remote dashboard access (before auth so user can configure while waiting)
+# ============================================================================
+# Remote Dashboard Configuration (config only, no keyring setup)
+# ============================================================================
+
 echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo -e "  ${CYAN}Remote Dashboard Access${NC}"
 echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -520,78 +450,24 @@ echo -e "  ${ORANGE}WARNING: This exposes the dashboard to your network.${NC}"
 echo -e "  ${MUTED}The dashboard allows service control and configuration changes.${NC}"
 echo -e "  ${MUTED}Only enable this on trusted networks or behind a firewall.${NC}"
 echo -e ""
-read -p "  Enable remote dashboard access? [y/N]: " headless_choice
+read -p "  Enable remote dashboard access? [y/N]: " remote_choice
 
 DASHBOARD_HOST="127.0.0.1"
-HEADLESS_MODE="false"
-if [[ "$headless_choice" =~ ^[Yy]$ ]]; then
-	HEADLESS_MODE="true"
+if [[ "$remote_choice" =~ ^[Yy]$ ]]; then
 	DASHBOARD_HOST="0.0.0.0"
-
-	# Setup headless keyring on Linux (must happen before proton-drive-sync commands)
-	if [ "$os" = "linux" ]; then
-		echo -e ""
-		echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-		echo -e "  ${CYAN}Headless Keyring Setup${NC}"
-		echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-		echo -e ""
-		echo -e "  In headless mode, gnome-keyring needs to be started manually."
-		echo -e "  A password is required to unlock the keyring on startup."
-		echo -e ""
-		echo -e "  ${ORANGE}SECURITY WARNING:${NC} The keyring password will be stored in plain text at:"
-		echo -e "  ${MUTED}~/.local/share/proton-drive-sync/keyring_init.sh${NC}"
-		echo -e "  ${MUTED}File permissions are set to 700 (owner read/write/execute only).${NC}"
-		echo -e ""
-
-		# Prompt for keyring password with confirmation
-		while true; do
-			read -s -p "  Enter keyring password: " keyring_password
-			echo ""
-			read -s -p "  Confirm keyring password: " keyring_password_confirm
-			echo ""
-
-			if [ "$keyring_password" = "$keyring_password_confirm" ]; then
-				if [ -z "$keyring_password" ]; then
-					echo -e "  ${ORANGE}Warning: Empty password provided. Using empty password.${NC}"
-				fi
-				break
-			else
-				echo -e "  ${RED}Passwords do not match. Please try again.${NC}"
-				echo -e ""
-			fi
-		done
-
-		# Install libsecret with dbus-x11 for headless mode
-		install_libsecret true
-
-		# Setup headless keyring
-		setup_headless_keyring "$keyring_password"
-
-		# Start keyring immediately for this session (so auth can use it)
-		if [ -f "$HOME/.local/share/proton-drive-sync/keyring_init.sh" ]; then
-			"$HOME/.local/share/proton-drive-sync/keyring_init.sh"
-			if [ -f "$HOME/.local/share/proton-drive-sync/keyring_env" ]; then
-				source "$HOME/.local/share/proton-drive-sync/keyring_env"
-			fi
-		fi
-	fi
-
 	echo -e ""
 	echo -e "  ${MUTED}Enabling remote dashboard access...${NC}"
 	proton-drive-sync config --set dashboard_host=0.0.0.0
 else
 	echo -e ""
 	echo -e "  ${MUTED}Keeping dashboard local-only (localhost:4242)...${NC}"
-
-	# Install libsecret without headless extras (must happen before proton-drive-sync commands)
-	if [ "$os" = "linux" ]; then
-		install_libsecret false
-	fi
-
 	proton-drive-sync config --set dashboard_host=127.0.0.1
 fi
 
-# Run auth flow
+# ============================================================================
+# Authentication
+# ============================================================================
+
 echo -e ""
 echo -e "${MUTED}Starting authentication...${NC}"
 echo -e ""
@@ -602,15 +478,56 @@ if ! proton-drive-sync auth; then
 	exit 1
 fi
 
-# Start the daemon
+# ============================================================================
+# Service Installation
+# ============================================================================
+
 echo -e ""
-echo -e "${MUTED}Starting proton-drive-sync daemon...${NC}"
-proton-drive-sync start
+echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "  ${CYAN}Service Installation${NC}"
+echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e ""
+
+if [ "$os" = "linux" ]; then
+	echo -e "  When should the sync service start?"
+	echo -e ""
+	echo -e "    ${CYAN}1)${NC} On login (user service) - runs when you log in"
+	echo -e "    ${CYAN}2)${NC} On boot (system service) - runs at system startup ${MUTED}(requires sudo)${NC}"
+	echo -e ""
+	read -p "  Choice [1/2]: " service_choice
+
+	# Install Linux dependencies (libsecret, gnome-keyring, dbus-x11)
+	install_linux_dependencies
+
+	if [ "$service_choice" = "2" ]; then
+		echo -e ""
+		echo -e "  ${MUTED}Installing system service (requires sudo)...${NC}"
+		sudo proton-drive-sync service install --install-scope=system
+	else
+		echo -e ""
+		echo -e "  ${MUTED}Installing user service...${NC}"
+		proton-drive-sync service install
+	fi
+else
+	# macOS/Windows - only user scope supported
+	echo -e "  Start sync service automatically on login?"
+	echo -e ""
+	read -p "  Install service? [Y/n]: " login_choice
+
+	if [[ ! "$login_choice" =~ ^[Nn]$ ]]; then
+		echo -e ""
+		echo -e "  ${MUTED}Installing service...${NC}"
+		proton-drive-sync service install
+	else
+		echo -e ""
+		echo -e "  ${MUTED}Skipping service installation.${NC}"
+		echo -e "  ${MUTED}You can install it later with: proton-drive-sync service install${NC}"
+	fi
+fi
 
 echo -e ""
 echo -e "${MUTED}Proton Drive Sync is now running!${NC}"
 echo -e ""
-echo -e "${MUTED}Opening dashboard...${NC}"
 
 # Open browser (platform-specific)
 open_browser() {
@@ -627,6 +544,7 @@ open_browser() {
 }
 
 if [ "$DASHBOARD_HOST" != "0.0.0.0" ]; then
+	echo -e "${MUTED}Opening dashboard...${NC}"
 	open_browser "http://localhost:4242"
 fi
 
@@ -645,3 +563,4 @@ if [ "$DASHBOARD_HOST" = "0.0.0.0" ]; then
 else
 	echo -e "  http://localhost:4242"
 fi
+echo -e ""

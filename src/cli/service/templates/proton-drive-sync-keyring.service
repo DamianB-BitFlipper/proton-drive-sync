@@ -1,0 +1,14 @@
+[Unit]
+Description=Proton Drive Sync - Keyring Initialization
+Before=proton-drive-sync.service
+
+[Service]
+Type=oneshot
+ExecStart={{KEYRING_INIT_SCRIPT}}
+RemainAfterExit=yes
+{{USER_LINE}}
+Environment=HOME={{HOME}}
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{UID}}/bus
+
+[Install]
+WantedBy={{WANTED_BY}}

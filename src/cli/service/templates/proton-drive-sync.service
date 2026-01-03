@@ -1,7 +1,8 @@
 [Unit]
 Description=Proton Drive Sync
-After=network-online.target gnome-keyring-headless.service
+After=network-online.target proton-drive-sync-keyring.service
 Wants=network-online.target
+Requires=proton-drive-sync-keyring.service
 
 [Service]
 Type=simple
@@ -11,7 +12,8 @@ Restart=on-failure
 RestartSec=5
 Environment="HOME={{HOME}}"
 Environment="PATH={{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin"
-EnvironmentFile=-{{HOME}}/.local/share/proton-drive-sync/keyring_env
+Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{UID}}/bus"
+EnvironmentFile=-{{KEYRING_ENV_FILE}}
 
 [Install]
-WantedBy=default.target
+WantedBy={{WANTED_BY}}

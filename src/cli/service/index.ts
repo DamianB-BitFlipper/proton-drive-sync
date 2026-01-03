@@ -65,7 +65,8 @@ function isSupportedPlatform(): boolean {
 
 export async function serviceInstallCommand(
   interactive: boolean = true,
-  scope: InstallScope = 'user'
+  scope: InstallScope = 'user',
+  keyringPassword?: string
 ): Promise<void> {
   if (!isSupportedPlatform()) {
     if (interactive) {
@@ -99,7 +100,7 @@ export async function serviceInstallCommand(
 
   const installSync = interactive ? await askYesNo('Install proton-drive-sync service?') : true;
   if (installSync) {
-    await service.install(binPath);
+    await service.install(binPath, keyringPassword);
   } else {
     logger.info('Skipping proton-drive-sync service.');
   }
