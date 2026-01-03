@@ -16,6 +16,7 @@ import {
   serviceUnloadCommand,
   serviceLoadCommand,
 } from './cli/service/index.js';
+import type { InstallScope } from './cli/service/types.js';
 import { stopCommand } from './cli/stop.js';
 import { startCommand } from './cli/start.js';
 import { dashboardCommand } from './cli/dashboard.js';
@@ -102,19 +103,26 @@ const serviceCommand = program
 serviceCommand
   .command('install')
   .description('Install and start the system service')
-  .action(serviceInstallCommand);
+  .option('--install-scope <scope>', 'Install scope: user or system (Linux only)', 'user')
+  .action((options) => serviceInstallCommand(true, options.installScope as InstallScope));
 
 serviceCommand
   .command('uninstall')
   .description('Stop and uninstall the system service')
   .option('-y, --yes', 'Skip confirmation prompts')
-  .action((options) => serviceUninstallCommand(!options.yes));
+  .option('--install-scope <scope>', 'Install scope: user or system (Linux only)', 'user')
+  .action((options) => serviceUninstallCommand(!options.yes, options.installScope as InstallScope));
 
-serviceCommand.command('load').description('Load the service').action(serviceLoadCommand);
+serviceCommand
+  .command('load')
+  .description('Load the service')
+  .option('--install-scope <scope>', 'Install scope: user or system (Linux only)', 'user')
+  .action((options) => serviceLoadCommand(options.installScope as InstallScope));
 
 serviceCommand
   .command('unload')
   .description('Unload the service (will reload on next boot)')
-  .action(serviceUnloadCommand);
+  .option('--install-scope <scope>', 'Install scope: user or system (Linux only)', 'user')
+  .action((options) => serviceUnloadCommand(options.installScope as InstallScope));
 
 program.parse();

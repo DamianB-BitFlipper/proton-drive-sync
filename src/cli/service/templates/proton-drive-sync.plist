@@ -8,6 +8,7 @@
     <array>
         <string>{{BIN_PATH}}</string>
         <string>start</string>
+        <string>--no-daemon</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>

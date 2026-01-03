@@ -4,6 +4,8 @@
 
 export const SERVICE_NAME = 'proton-drive-sync';
 
+export type InstallScope = 'user' | 'system';
+
 export interface ServiceResult {
   success: boolean;
   error?: string;

@@ -5,7 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart={{BIN_PATH}} start
+{{USER_LINE}}
+ExecStart={{BIN_PATH}} start --no-daemon
 Restart=on-failure
 RestartSec=5
 Environment="HOME={{HOME}}"

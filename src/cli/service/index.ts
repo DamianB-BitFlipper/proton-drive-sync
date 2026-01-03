@@ -3,7 +3,7 @@
  *
  * Delegates to platform-specific implementations:
  * - macOS: launchd (LaunchAgents)
- * - Linux: systemd (user services)
+ * - Linux: systemd (user or system services)
  * - Windows: Task Scheduler
  */
 
@@ -11,7 +11,7 @@ import * as readline from 'readline';
 import { sendSignal } from '../../signals.js';
 import { hasFlag, FLAGS } from '../../flags.js';
 import { logger } from '../../logger.js';
-import type { ServiceOperations } from './types.js';
+import type { ServiceOperations, InstallScope } from './types.js';
 
 function askYesNo(question: string): Promise<boolean> {
   const rl = readline.createInterface({
@@ -36,13 +36,20 @@ function getBinPathSafe(): string | null {
   return output.split('\n')[0].trim();
 }
 
-async function getServiceManager(): Promise<ServiceOperations> {
+function validateScope(scope: InstallScope): void {
+  if (scope === 'system' && process.platform !== 'linux') {
+    logger.error('System scope is only supported on Linux.');
+    process.exit(1);
+  }
+}
+
+async function getServiceManager(scope: InstallScope = 'user'): Promise<ServiceOperations> {
   if (process.platform === 'darwin') {
     const mod = await import('./service-macos.js');
     return mod.macosService;
   } else if (process.platform === 'linux') {
     const mod = await import('./service-linux.js');
-    return mod.linuxService;
+    return mod.getLinuxService(scope);
   } else if (process.platform === 'win32') {
     const mod = await import('./service-windows.js');
     return mod.windowsService;
@@ -56,7 +63,10 @@ function isSupportedPlatform(): boolean {
   );
 }
 
-export async function serviceInstallCommand(interactive: boolean = true): Promise<void> {
+export async function serviceInstallCommand(
+  interactive: boolean = true,
+  scope: InstallScope = 'user'
+): Promise<void> {
   if (!isSupportedPlatform()) {
     if (interactive) {
       logger.error(`Service installation is only supported on macOS, Linux, and Windows.`);
@@ -64,6 +74,8 @@ export async function serviceInstallCommand(interactive: boolean = true): Promis
     }
     return;
   }
+
+  validateScope(scope);
 
   const binPath = getBinPathSafe();
   if (!binPath) {
@@ -83,7 +95,7 @@ export async function serviceInstallCommand(interactive: boolean = true): Promis
     return;
   }
 
-  const service = await getServiceManager();
+  const service = await getServiceManager(scope);
 
   const installSync = interactive ? await askYesNo('Install proton-drive-sync service?') : true;
   if (installSync) {
@@ -93,7 +105,10 @@ export async function serviceInstallCommand(interactive: boolean = true): Promis
   }
 }
 
-export async function serviceUninstallCommand(interactive: boolean = true): Promise<void> {
+export async function serviceUninstallCommand(
+  interactive: boolean = true,
+  scope: InstallScope = 'user'
+): Promise<void> {
   if (!isSupportedPlatform()) {
     if (interactive) {
       logger.error(`Service uninstallation is only supported on macOS, Linux, and Windows.`);
@@ -102,7 +117,9 @@ export async function serviceUninstallCommand(interactive: boolean = true): Prom
     return;
   }
 
-  const service = await getServiceManager();
+  validateScope(scope);
+
+  const service = await getServiceManager(scope);
 
   if (!service.isInstalled()) {
     if (interactive) {
@@ -130,12 +147,14 @@ export function isServiceInstalled(): boolean {
  * Load the sync service (enable start on login)
  * Returns true on success, false on failure
  */
-export async function loadSyncService(): Promise<boolean> {
+export async function loadSyncService(scope: InstallScope = 'user'): Promise<boolean> {
   if (!isSupportedPlatform()) {
     return false;
   }
 
-  const service = await getServiceManager();
+  validateScope(scope);
+
+  const service = await getServiceManager(scope);
   return service.load();
 }
 
@@ -143,22 +162,26 @@ export async function loadSyncService(): Promise<boolean> {
  * Unload the sync service (disable start on login)
  * Returns true on success, false on failure
  */
-export async function unloadSyncService(): Promise<boolean> {
+export async function unloadSyncService(scope: InstallScope = 'user'): Promise<boolean> {
   if (!isSupportedPlatform()) {
     return false;
   }
 
-  const service = await getServiceManager();
+  validateScope(scope);
+
+  const service = await getServiceManager(scope);
   return service.unload();
 }
 
-export async function serviceUnloadCommand(): Promise<void> {
+export async function serviceUnloadCommand(scope: InstallScope = 'user'): Promise<void> {
   if (!isSupportedPlatform()) {
     logger.error(`Service management is only supported on macOS, Linux, and Windows.`);
     process.exit(1);
   }
 
-  if (!(await unloadSyncService())) {
+  validateScope(scope);
+
+  if (!(await unloadSyncService(scope))) {
     logger.error('Failed to unload service.');
     process.exit(1);
   }
@@ -166,19 +189,21 @@ export async function serviceUnloadCommand(): Promise<void> {
   logger.info('Service stopped and unloaded. Run `proton-drive-sync service load` to restart.');
 }
 
-export async function serviceLoadCommand(): Promise<void> {
+export async function serviceLoadCommand(scope: InstallScope = 'user'): Promise<void> {
   if (!isSupportedPlatform()) {
     logger.error(`Service management is only supported on macOS, Linux, and Windows.`);
     process.exit(1);
   }
 
-  const service = await getServiceManager();
+  validateScope(scope);
+
+  const service = await getServiceManager(scope);
   if (!service.isInstalled()) {
     logger.error('Service is not installed. Run `proton-drive-sync service install` first.');
     process.exit(1);
   }
 
-  if (await loadSyncService()) {
+  if (await loadSyncService(scope)) {
     logger.info('Service started.');
   } else {
     logger.error('Failed to start service.');
