@@ -146,12 +146,17 @@ install_watchman_linux() {
 
 		echo -e "${MUTED}Installing Watchman for ARM64 via .deb package...${NC}"
 
+		# Install dependencies first to avoid dpkg error messages
+		echo -e "${MUTED}Installing Watchman dependencies...${NC}"
+		sudo apt-get update
+		sudo apt-get install -y libgoogle-glog-dev libboost-all-dev libgflags-dev libevent-dev libdouble-conversion-dev libssl-dev libsnappy1v5 libzstd1 liblz4-1 libunwind8
+
 		local tmp_dir
 		tmp_dir=$(mktemp -d)
 		local deb_url="https://www.damianb.dev/proton-drive-sync/watchman_2025.12.28.00_arm64.deb"
 
 		curl -L -o "$tmp_dir/watchman.deb" "$deb_url"
-		sudo dpkg -i "$tmp_dir/watchman.deb" || sudo apt-get install -f -y
+		sudo dpkg -i "$tmp_dir/watchman.deb"
 
 		rm -rf "$tmp_dir"
 
