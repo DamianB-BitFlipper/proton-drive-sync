@@ -516,6 +516,7 @@ else
 		echo -e ""
 		echo -e "  ${MUTED}Installing service...${NC}"
 		proton-drive-sync service install
+		proton-drive-sync service load
 	else
 		echo -e ""
 		echo -e "  ${MUTED}Skipping automatic startup.${NC}"
