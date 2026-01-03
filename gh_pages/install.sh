@@ -269,9 +269,9 @@ install_libsecret() {
 	local base_packages_pacman="libsecret gnome-keyring"
 
 	if [ "$headless_mode" = "true" ]; then
-		base_packages_apt="$base_packages_apt dbus-x11 python3-secretstorage"
-		base_packages_dnf="$base_packages_dnf dbus-x11 python3-secretstorage"
-		base_packages_pacman="$base_packages_pacman dbus python-secretstorage"
+		base_packages_apt="$base_packages_apt dbus-x11"
+		base_packages_dnf="$base_packages_dnf dbus-x11"
+		base_packages_pacman="$base_packages_pacman dbus"
 	fi
 
 	# Check if libsecret is already available

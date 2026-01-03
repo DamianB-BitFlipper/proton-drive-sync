@@ -5,39 +5,52 @@
 KEYRING_PASSWORD="{{KEYRING_PASSWORD}}"
 KEYRING_ENV_FILE="{{KEYRING_ENV_FILE}}"
 
-# Check if keyring is already running and accessible
-if [ -f "$KEYRING_ENV_FILE" ]; then
-	source "$KEYRING_ENV_FILE"
-	if [ -n "$GNOME_KEYRING_PID" ] && kill -0 "$GNOME_KEYRING_PID" 2>/dev/null; then
-		exit 0
+# Use the system D-Bus session if available (preferred on headless systems)
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+	# Check for system user bus first
+	if [ -S "/run/user/$(id -u)/bus" ]; then
+		export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+	else
+		# Fall back to launching a new session
+		eval "$(dbus-launch --sh-syntax)"
 	fi
 fi
 
-# Start dbus session if not running
-if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
-	eval "$(dbus-launch --sh-syntax)"
+# Check if keyring is already running and functional
+if pgrep -x gnome-keyring >/dev/null 2>&1; then
+	# Test if the login collection is accessible
+	if dbus-send --session --print-reply --dest=org.freedesktop.secrets \
+		/org/freedesktop/secrets/collection/login \
+		org.freedesktop.DBus.Properties.Get \
+		string:org.freedesktop.Secret.Collection \
+		string:Label >/dev/null 2>&1; then
+		# Keyring is working, just update env file and exit
+		cat >"$KEYRING_ENV_FILE" <<EOF
+DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"
+EOF
+		chmod 600 "$KEYRING_ENV_FILE"
+		exit 0
+	fi
+	# Keyring running but not functional, kill it
+	pkill -9 gnome-keyring 2>/dev/null || true
+	sleep 0.5
 fi
 
-# Start gnome-keyring-daemon with login to unlock
-eval "$(echo "$KEYRING_PASSWORD" | gnome-keyring-daemon --login)"
-eval "$(gnome-keyring-daemon --start --components=secrets)"
+# Ensure keyring directory exists
+mkdir -p "$HOME/.local/share/keyrings"
 
-# Create the "login" collection if it doesn't exist
-# This is required on headless systems where the collection isn't auto-created
-python3 -c "
-import secretstorage
-conn = secretstorage.dbus_init()
-try:
-    secretstorage.collection.create_collection(conn, 'Login', alias='default')
-except secretstorage.exceptions.ItemExists:
-    pass
-" 2>/dev/null || true
+# Remove corrupted keyring files if they exist but cause issues
+# (This ensures a clean state on first run)
+if [ ! -f "$HOME/.local/share/keyrings/login.keyring" ]; then
+	rm -rf "$HOME/.local/share/keyrings/"* 2>/dev/null || true
+fi
+
+# Start gnome-keyring-daemon with --unlock (creates and unlocks the keyring)
+echo "$KEYRING_PASSWORD" | gnome-keyring-daemon --unlock --components=secrets --daemonize
 
 # Export environment variables to file for other services
 cat >"$KEYRING_ENV_FILE" <<EOF
 DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"
-GNOME_KEYRING_CONTROL="$GNOME_KEYRING_CONTROL"
-GNOME_KEYRING_PID="$GNOME_KEYRING_PID"
 EOF
 
 chmod 600 "$KEYRING_ENV_FILE"
