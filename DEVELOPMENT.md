@@ -1,5 +1,10 @@
 # Development
 
+## Requirements
+
+- [Watchman](https://facebook.github.io/watchman/) - file system monitoring
+- [pywatchman](https://pypi.org/project/pywatchman/) (`pip install pywatchman`) - required on Linux only
+
 ## Setup
 
 ```bash
