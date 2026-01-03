@@ -66,6 +66,10 @@ irm https://www.damianb.dev/proton-drive-sync/uninstall.ps1 | iex
 
 </details>
 
+## FAQ
+
+See [FAQ.md](FAQ.md) for common issues and solutions.
+
 ## Development
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for development setup and contributing guidelines.

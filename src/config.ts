@@ -85,8 +85,10 @@ function parseConfig(exitOnError: boolean): Config | null {
     const content = readFileSync(CONFIG_FILE, 'utf-8');
     const config = JSON.parse(content) as Config;
 
-    if (!config.sync_dirs || !Array.isArray(config.sync_dirs)) {
-      const msg = 'Config must have a "sync_dirs" array';
+    if (!config.sync_dirs) {
+      config.sync_dirs = [];
+    } else if (!Array.isArray(config.sync_dirs)) {
+      const msg = 'Config "sync_dirs" must be an array';
       if (exitOnError) {
         logger.error(msg);
         process.exit(1);

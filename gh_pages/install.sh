@@ -504,7 +504,9 @@ open_browser() {
 	fi
 }
 
-open_browser "http://localhost:4242"
+if [ "$DASHBOARD_HOST" != "0.0.0.0" ]; then
+	open_browser "http://localhost:4242"
+fi
 
 echo -e ""
 echo -e "${MUTED}Complete your configuration by visiting the dashboard at:${NC}"
