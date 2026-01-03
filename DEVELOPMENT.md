@@ -2,7 +2,10 @@
 
 ## Requirements
 
-- [Watchman](https://facebook.github.io/watchman/) - file system monitoring
+Run the install script first (see README) to install Watchman and other system dependencies. The install script is only needed to set up the required dependencies, so it can be exited before completion.
+
+### Additional requirements
+
 - [pywatchman](https://pypi.org/project/pywatchman/) (`pip install pywatchman`) - required on Linux and Windows for `make dev`
 
 ## Setup
