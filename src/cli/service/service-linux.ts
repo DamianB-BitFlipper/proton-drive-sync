@@ -1,10 +1,10 @@
 /**
  * Linux systemd service implementation
  * Supports both user-level (~/.config/systemd/user/) and system-level (/etc/systemd/system/) services
- * Includes keyring setup for headless credential storage
+ * Uses file-based encrypted credential storage (no gnome-keyring dependency)
  */
 
-import { existsSync, mkdirSync, unlinkSync, writeFileSync, chmodSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { password as passwordPrompt } from '@inquirer/prompts';
@@ -13,21 +13,12 @@ import { logger } from '../../logger.js';
 import type { ServiceOperations, InstallScope } from './types.js';
 // @ts-expect-error Bun text imports
 import serviceTemplate from './templates/proton-drive-sync.service' with { type: 'text' };
-// @ts-expect-error Bun text imports
-import keyringServiceTemplate from './templates/proton-drive-sync-keyring.service' with { type: 'text' };
-// @ts-expect-error Bun text imports
-import keyringInitTemplate from './templates/keyring-init.sh' with { type: 'text' };
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 const SERVICE_NAME = 'proton-drive-sync';
-const KEYRING_SERVICE_NAME = 'proton-drive-sync-keyring';
-
-// Required packages for keyring functionality
-const REQUIRED_PACKAGES_DEBIAN = ['libsecret-1-0', 'gnome-keyring', 'dbus-x11'];
-const REQUIRED_PACKAGES_FEDORA = ['libsecret', 'gnome-keyring', 'dbus-x11'];
 
 // ============================================================================
 // Path Helpers
@@ -36,10 +27,6 @@ const REQUIRED_PACKAGES_FEDORA = ['libsecret', 'gnome-keyring', 'dbus-x11'];
 interface ServicePaths {
   serviceDir: string;
   servicePath: string;
-  keyringServicePath: string;
-  keyringInitScript: string;
-  keyringEnvFile: string;
-  keyringDir: string;
   dataDir: string;
 }
 
@@ -50,10 +37,6 @@ function getPaths(scope: InstallScope): ServicePaths {
     return {
       serviceDir: '/etc/systemd/system',
       servicePath: '/etc/systemd/system/proton-drive-sync.service',
-      keyringServicePath: '/etc/systemd/system/proton-drive-sync-keyring.service',
-      keyringInitScript: '/etc/proton-drive-sync/keyring-init.sh',
-      keyringEnvFile: '/etc/proton-drive-sync/keyring.env',
-      keyringDir: '/var/lib/proton-drive-sync/keyrings',
       dataDir: '/etc/proton-drive-sync',
     };
   }
@@ -61,17 +44,7 @@ function getPaths(scope: InstallScope): ServicePaths {
   return {
     serviceDir: join(home, '.config', 'systemd', 'user'),
     servicePath: join(home, '.config', 'systemd', 'user', 'proton-drive-sync.service'),
-    keyringServicePath: join(
-      home,
-      '.config',
-      'systemd',
-      'user',
-      'proton-drive-sync-keyring.service'
-    ),
-    keyringInitScript: join(home, '.local', 'share', 'proton-drive-sync', 'keyring-init.sh'),
-    keyringEnvFile: join(home, '.local', 'share', 'proton-drive-sync', 'keyring.env'),
-    keyringDir: join(home, '.local', 'share', 'keyrings'),
-    dataDir: join(home, '.local', 'share', 'proton-drive-sync'),
+    dataDir: join(home, '.config', 'proton-drive-sync'),
   };
 }
 
@@ -123,118 +96,36 @@ function daemonReload(scope: InstallScope): boolean {
 }
 
 // ============================================================================
-// Dependency Checking
+// Encryption Password Prompt
 // ============================================================================
 
-function detectPackageManager(): 'apt' | 'dnf' | 'unknown' {
-  if (Bun.spawnSync(['which', 'apt']).exitCode === 0) {
-    return 'apt';
-  }
-  if (Bun.spawnSync(['which', 'dnf']).exitCode === 0) {
-    return 'dnf';
-  }
-  return 'unknown';
-}
-
-function checkPackageInstalled(pkg: string, packageManager: 'apt' | 'dnf' | 'unknown'): boolean {
-  if (packageManager === 'apt') {
-    const result = Bun.spawnSync(['dpkg-query', '-W', '-f=${Status}', pkg]);
-    const output = new TextDecoder().decode(result.stdout);
-    return output.includes('install ok installed');
-  }
-  if (packageManager === 'dnf') {
-    const result = Bun.spawnSync(['rpm', '-q', pkg]);
-    return result.exitCode === 0;
-  }
-  // Unknown package manager - assume installed
-  return true;
-}
-
-function checkDependencies(): { missing: string[]; installCommand: string } {
-  const packageManager = detectPackageManager();
-  const packages = packageManager === 'dnf' ? REQUIRED_PACKAGES_FEDORA : REQUIRED_PACKAGES_DEBIAN;
-
-  const missing: string[] = [];
-  for (const pkg of packages) {
-    if (!checkPackageInstalled(pkg, packageManager)) {
-      missing.push(pkg);
-    }
-  }
-
-  let installCommand = '';
-  if (missing.length > 0) {
-    if (packageManager === 'apt') {
-      installCommand = `sudo apt install ${missing.join(' ')}`;
-    } else if (packageManager === 'dnf') {
-      installCommand = `sudo dnf install ${missing.join(' ')}`;
-    } else {
-      installCommand = `Install packages: ${missing.join(', ')}`;
-    }
-  }
-
-  return { missing, installCommand };
-}
-
-// ============================================================================
-// Keyring Password Prompt
-// ============================================================================
-
-async function promptKeyringPassword(): Promise<string> {
+async function promptEncryptionPassword(): Promise<string> {
   console.log('');
-  console.log('⚠️  WARNING: The keyring password will be stored in CLEARTEXT in the service file.');
-  console.log('This is required for automated keyring unlocking in headless environments.');
+  console.log(
+    '⚠️  WARNING: The encryption password will be stored in CLEARTEXT in the service file.'
+  );
+  console.log('This is required for automated credential decryption in headless environments.');
   console.log('');
 
-  const keyringPassword = await passwordPrompt({ message: 'Enter keyring password:' });
-  const confirm = await passwordPrompt({ message: 'Confirm keyring password:' });
+  const encryptionPassword = await passwordPrompt({ message: 'Enter encryption password:' });
+  const confirm = await passwordPrompt({ message: 'Confirm encryption password:' });
 
-  if (keyringPassword !== confirm) {
+  if (encryptionPassword !== confirm) {
     throw new Error('Passwords do not match');
   }
 
-  if (!keyringPassword) {
+  if (!encryptionPassword) {
     throw new Error('Password cannot be empty');
   }
 
-  return keyringPassword;
+  return encryptionPassword;
 }
 
 // ============================================================================
 // Service File Generation
 // ============================================================================
 
-function generateKeyringInitScript(password: string, scope: InstallScope): string {
-  const paths = getPaths(scope);
-
-  return keyringInitTemplate
-    .replace('{{KEYRING_DIR}}', paths.keyringDir)
-    .replace('{{KEYRING_ENV_FILE}}', paths.keyringEnvFile)
-    .replace('{{KEYRING_PASSWORD}}', password);
-}
-
-function generateKeyringServiceFile(scope: InstallScope): string {
-  const paths = getPaths(scope);
-  const home = homedir();
-  const uid = getCurrentUid();
-
-  let content = keyringServiceTemplate
-    .replace('{{KEYRING_INIT_SCRIPT}}', paths.keyringInitScript)
-    .replace('{{HOME}}', home)
-    .replace(/\{\{UID\}\}/g, String(uid))
-    .replace('{{WANTED_BY}}', scope === 'system' ? 'multi-user.target' : 'default.target');
-
-  if (scope === 'system') {
-    const user = getCurrentUser();
-    content = content.replace('{{USER_LINE}}', `User=${user}`);
-  } else {
-    content = content.replace('{{USER_LINE}}\n', '');
-  }
-
-  return content;
-}
-
-function generateServiceFile(binPath: string, scope: InstallScope): string {
-  const paths = getPaths(scope);
+function generateServiceFile(binPath: string, password: string, scope: InstallScope): string {
   const home = homedir();
   const uid = getCurrentUid();
 
@@ -242,7 +133,7 @@ function generateServiceFile(binPath: string, scope: InstallScope): string {
     .replace('{{BIN_PATH}}', binPath)
     .replace(/\{\{HOME\}\}/g, home)
     .replace(/\{\{UID\}\}/g, String(uid))
-    .replace('{{KEYRING_ENV_FILE}}', paths.keyringEnvFile)
+    .replace('{{KEYRING_PASSWORD}}', password)
     .replace('{{WANTED_BY}}', scope === 'system' ? 'multi-user.target' : 'default.target');
 
   if (scope === 'system') {
@@ -253,108 +144,6 @@ function generateServiceFile(binPath: string, scope: InstallScope): string {
   }
 
   return content;
-}
-
-// ============================================================================
-// Keyring Service Management
-// ============================================================================
-
-function installKeyringService(password: string, scope: InstallScope): boolean {
-  const paths = getPaths(scope);
-
-  // Create data directory for keyring init script
-  if (!existsSync(paths.dataDir)) {
-    mkdirSync(paths.dataDir, { recursive: true });
-  }
-
-  // Create keyring directory
-  if (!existsSync(paths.keyringDir)) {
-    mkdirSync(paths.keyringDir, { recursive: true });
-  }
-
-  // Write keyring init script
-  const keyringInitContent = generateKeyringInitScript(password, scope);
-  writeFileSync(paths.keyringInitScript, keyringInitContent);
-  chmodSync(paths.keyringInitScript, 0o700); // rwx------
-  logger.info(`Created: ${paths.keyringInitScript}`);
-
-  // Write keyring service file
-  const keyringServiceContent = generateKeyringServiceFile(scope);
-  writeFileSync(paths.keyringServicePath, keyringServiceContent);
-  logger.info(`Created: ${paths.keyringServicePath}`);
-
-  return true;
-}
-
-function uninstallKeyringService(scope: InstallScope): boolean {
-  const paths = getPaths(scope);
-
-  // Stop and disable keyring service
-  runSystemctl(scope, 'stop', KEYRING_SERVICE_NAME);
-  runSystemctl(scope, 'disable', KEYRING_SERVICE_NAME);
-
-  // Remove keyring service file
-  if (existsSync(paths.keyringServicePath)) {
-    unlinkSync(paths.keyringServicePath);
-    logger.info(`Removed: ${paths.keyringServicePath}`);
-  }
-
-  // Remove keyring init script
-  if (existsSync(paths.keyringInitScript)) {
-    unlinkSync(paths.keyringInitScript);
-    logger.info(`Removed: ${paths.keyringInitScript}`);
-  }
-
-  // Remove keyring env file
-  if (existsSync(paths.keyringEnvFile)) {
-    unlinkSync(paths.keyringEnvFile);
-    logger.info(`Removed: ${paths.keyringEnvFile}`);
-  }
-
-  return true;
-}
-
-function loadKeyringService(scope: InstallScope): boolean {
-  const paths = getPaths(scope);
-
-  if (!existsSync(paths.keyringServicePath)) {
-    return false;
-  }
-
-  // Enable keyring service
-  const enableResult = runSystemctl(scope, 'enable', KEYRING_SERVICE_NAME);
-  if (!enableResult.success) {
-    logger.error(`Failed to enable keyring service: ${enableResult.error}`);
-    return false;
-  }
-
-  // Start keyring service
-  const startResult = runSystemctl(scope, 'start', KEYRING_SERVICE_NAME);
-  if (!startResult.success) {
-    logger.error(`Failed to start keyring service: ${startResult.error}`);
-    return false;
-  }
-
-  return true;
-}
-
-function unloadKeyringService(scope: InstallScope): boolean {
-  const paths = getPaths(scope);
-
-  if (!existsSync(paths.keyringServicePath)) {
-    return true;
-  }
-
-  // Stop keyring service
-  runSystemctl(scope, 'stop', KEYRING_SERVICE_NAME);
-
-  // Disable keyring service
-  const disableResult = runSystemctl(scope, 'disable', KEYRING_SERVICE_NAME);
-  if (!disableResult.success) {
-    logger.debug(`Failed to disable keyring service: ${disableResult.error}`);
-  }
-
-  return true;
 }
 
 // ============================================================================
@@ -365,28 +154,22 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
   const paths = getPaths(scope);
 
   return {
-    async install(binPath: string, keyringPassword?: string): Promise<boolean> {
+    async install(binPath: string, encryptionPassword?: string): Promise<boolean> {
       // System scope requires root
       if (scope === 'system' && !isRunningAsRoot()) {
         logger.error('System scope requires running with sudo');
         return false;
       }
 
-      // Check dependencies
-      const { missing, installCommand } = checkDependencies();
-      if (missing.length > 0) {
-        logger.error(`Missing required packages: ${missing.join(', ')}`);
-        logger.error(`Install them with: ${installCommand}`);
-        return false;
-      }
-
-      // Prompt for keyring password if not provided
-      let password = keyringPassword;
+      // Prompt for encryption password if not provided
+      let password = encryptionPassword;
       if (!password) {
         try {
-          password = await promptKeyringPassword();
+          password = await promptEncryptionPassword();
         } catch (error) {
-          logger.error(`Keyring password error: ${error instanceof Error ? error.message : error}`);
+          logger.error(
+            `Encryption password error: ${error instanceof Error ? error.message : error}`
+          );
           return false;
         }
       }
@@ -396,43 +179,25 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
         mkdirSync(paths.serviceDir, { recursive: true });
       }
 
+      // Create data directory if it doesn't exist
+      if (!existsSync(paths.dataDir)) {
+        mkdirSync(paths.dataDir, { recursive: true });
+      }
+
       logger.info(`Installing proton-drive-sync service (${scope} scope)...`);
 
-      // If services exist, stop and disable them first
+      // If service exists, stop and disable it first
       if (existsSync(paths.servicePath)) {
         runSystemctl(scope, 'stop', SERVICE_NAME);
         runSystemctl(scope, 'disable', SERVICE_NAME);
       }
-      if (existsSync(paths.keyringServicePath)) {
-        runSystemctl(scope, 'stop', KEYRING_SERVICE_NAME);
-        runSystemctl(scope, 'disable', KEYRING_SERVICE_NAME);
-      }
-
-      // For system scope, enable user lingering to ensure D-Bus session bus exists at boot
-      if (scope === 'system') {
-        const user = getCurrentUser();
-        const lingerResult = Bun.spawnSync(['loginctl', 'enable-linger', user]);
-        if (lingerResult.exitCode !== 0) {
-          logger.warn(
-            `Failed to enable lingering for user ${user}. D-Bus session bus may not be available at boot.`
-          );
-        } else {
-          logger.debug(`Enabled lingering for user ${user}`);
-        }
-      }
-
-      // Install keyring service first
-      if (!installKeyringService(password, scope)) {
-        logger.error('Failed to install keyring service');
-        return false;
-      }
 
       // Write main service file
-      const content = generateServiceFile(binPath, scope);
+      const content = generateServiceFile(binPath, password, scope);
       writeFileSync(paths.servicePath, content);
       logger.info(`Created: ${paths.servicePath}`);
 
-      // Reload systemd to pick up new services
+      // Reload systemd to pick up new service
       if (!daemonReload(scope)) {
         logger.error('Failed to reload systemd daemon');
         return false;
@@ -454,10 +219,8 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
       const userPaths = getPaths('user');
       const systemPaths = getPaths('system');
 
-      const hasUserService =
-        existsSync(userPaths.servicePath) || existsSync(userPaths.keyringServicePath);
-      const hasSystemService =
-        existsSync(systemPaths.servicePath) || existsSync(systemPaths.keyringServicePath);
+      const hasUserService = existsSync(userPaths.servicePath);
+      const hasSystemService = existsSync(systemPaths.servicePath);
 
       if (!hasUserService && !hasSystemService) {
         if (interactive) {
@@ -476,18 +239,15 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
       if (hasUserService) {
         logger.info('Uninstalling user-level service...');
 
-        // Stop and disable the main service
+        // Stop and disable the service
         runSystemctl('user', 'stop', SERVICE_NAME);
         runSystemctl('user', 'disable', SERVICE_NAME);
 
-        // Remove main service file
+        // Remove service file
         if (existsSync(userPaths.servicePath)) {
           unlinkSync(userPaths.servicePath);
           logger.info(`Removed: ${userPaths.servicePath}`);
         }
-
-        // Uninstall keyring service
-        uninstallKeyringService('user');
 
         daemonReload('user');
       }
@@ -496,24 +256,14 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
       if (hasSystemService) {
         logger.info('Uninstalling system-level service...');
 
-        // Stop and disable the main service
+        // Stop and disable the service
         runSystemctl('system', 'stop', SERVICE_NAME);
         runSystemctl('system', 'disable', SERVICE_NAME);
 
-        // Remove main service file
+        // Remove service file
         if (existsSync(systemPaths.servicePath)) {
           unlinkSync(systemPaths.servicePath);
           logger.info(`Removed: ${systemPaths.servicePath}`);
-        }
-
-        // Uninstall keyring service
-        uninstallKeyringService('system');
-
-        // Disable user lingering (enabled during install for D-Bus session bus)
-        const user = getCurrentUser();
-        const lingerResult = Bun.spawnSync(['loginctl', 'disable-linger', user]);
-        if (lingerResult.exitCode === 0) {
-          logger.debug(`Disabled lingering for user ${user}`);
         }
 
         daemonReload('system');
@@ -536,13 +286,7 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
         return false;
       }
 
-      // Load keyring service first
-      if (!loadKeyringService(scope)) {
-        logger.error('Failed to load keyring service');
-        return false;
-      }
-
-      // Enable and start the main service
+      // Enable and start the service
       const enableResult = runSystemctl(scope, 'enable', SERVICE_NAME);
       if (!enableResult.success) {
         logger.error(`Failed to enable service: ${enableResult.error}`);
@@ -572,22 +316,19 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
         return true;
       }
 
-      // Stop the main service first
+      // Stop the service
       const stopResult = runSystemctl(scope, 'stop', SERVICE_NAME);
       if (!stopResult.success) {
         // Service might not be running, that's OK
         logger.debug(`Stop result: ${stopResult.error}`);
       }
 
-      // Disable the main service
+      // Disable the service
       const disableResult = runSystemctl(scope, 'disable', SERVICE_NAME);
       if (!disableResult.success) {
         logger.error(`Failed to disable service: ${disableResult.error}`);
         return false;
       }
-
-      // Unload keyring service
-      unloadKeyringService(scope);
 
       clearFlag(FLAGS.SERVICE_LOADED);
       logger.info(`Service unloaded: will not start on ${scope === 'system' ? 'boot' : 'login'}`);

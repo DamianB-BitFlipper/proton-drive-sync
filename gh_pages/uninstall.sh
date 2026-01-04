@@ -186,7 +186,7 @@ if [ "$os" = "linux" ]; then
 	echo -e ""
 	echo -e "${MUTED}Note: The following packages were installed as dependencies and may be${NC}"
 	echo -e "${MUTED}used by other applications. Remove them manually if no longer needed:${NC}"
-	echo -e "${MUTED}  sudo apt remove libsecret-1-0 gnome-keyring dbus-x11 jq${NC}"
+	echo -e "${MUTED}  sudo apt remove libsecret-1-0 jq${NC}"
 fi
 
 echo -e ""

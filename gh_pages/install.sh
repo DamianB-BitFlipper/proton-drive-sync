@@ -258,7 +258,7 @@ install_watchman() {
 }
 
 # ============================================================================
-# Install libsecret and keyring dependencies (Linux only)
+# Install dependencies (Linux only)
 # ============================================================================
 
 install_linux_dependencies() {
@@ -266,18 +266,18 @@ install_linux_dependencies() {
 		return
 	fi
 
-	echo -e "${MUTED}Installing dependencies (libsecret, gnome-keyring, dbus-x11, jq)...${NC}"
+	echo -e "${MUTED}Installing dependencies (libsecret, jq)...${NC}"
 
 	if command -v apt-get >/dev/null 2>&1; then
 		sudo apt-get update
-		sudo apt-get install -y libsecret-1-0 gnome-keyring dbus-x11 jq
+		sudo apt-get install -y libsecret-1-0 jq
 	elif command -v dnf >/dev/null 2>&1; then
-		sudo dnf install -y libsecret gnome-keyring dbus-x11 jq
+		sudo dnf install -y libsecret jq
 	elif command -v pacman >/dev/null 2>&1; then
-		sudo pacman -Sy --noconfirm libsecret gnome-keyring dbus jq
+		sudo pacman -Sy --noconfirm libsecret jq
 	else
 		echo -e "${ORANGE}Warning: Could not install dependencies automatically${NC}"
-		echo -e "${MUTED}Please install libsecret, gnome-keyring, dbus-x11, and jq manually${NC}"
+		echo -e "${MUTED}Please install libsecret and jq manually${NC}"
 	fi
 }
 
@@ -525,6 +525,25 @@ fi
 echo -e ""
 echo -e "${MUTED}Starting authentication...${NC}"
 echo -e ""
+
+# On Linux with service installed, we need to set KEYRING_PASSWORD for file-based credential storage
+# The password was already collected during service install and stored in the service file
+if [ "$os" = "linux" ] && [ "$SERVICE_INSTALLED" = "true" ]; then
+	# Extract KEYRING_PASSWORD from the installed service file
+	if [ "$service_choice" = "2" ]; then
+		SERVICE_FILE="/etc/systemd/system/proton-drive-sync.service"
+	else
+		SERVICE_FILE="$HOME/.config/systemd/user/proton-drive-sync.service"
+	fi
+
+	if [ -f "$SERVICE_FILE" ]; then
+		KEYRING_PASSWORD=$(grep -oP 'KEYRING_PASSWORD=\K[^"]+' "$SERVICE_FILE" 2>/dev/null || echo "")
+		if [ -n "$KEYRING_PASSWORD" ]; then
+			export KEYRING_PASSWORD
+		fi
+	fi
+fi
+
 if ! "$INSTALL_DIR/proton-drive-sync" auth; then
 	echo -e ""
 	echo -e "${RED}Authentication failed or was cancelled.${NC}"

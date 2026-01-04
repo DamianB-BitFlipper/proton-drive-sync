@@ -1,8 +1,7 @@
 [Unit]
 Description=Proton Drive Sync
-After=network-online.target proton-drive-sync-keyring.service
+After=network-online.target
 Wants=network-online.target
-Requires=proton-drive-sync-keyring.service
 
 [Service]
 Type=simple
@@ -12,8 +11,7 @@ Restart=on-failure
 RestartSec=5
 Environment="HOME={{HOME}}"
 Environment="PATH={{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{UID}}/bus"
-EnvironmentFile=-{{KEYRING_ENV_FILE}}
+Environment="KEYRING_PASSWORD={{KEYRING_PASSWORD}}"
 
 [Install]
 WantedBy={{WANTED_BY}}
