@@ -17,14 +17,16 @@ fi
 # Create keyring directory if it doesn't exist
 mkdir -p "$KEYRING_DIR"
 
-# Check if gnome-keyring-daemon is already running
-if ! pgrep -u "$(id -u)" -x "gnome-keyring-d" >/dev/null 2>&1; then
-	# Start and unlock the keyring daemon
-	echo "$KEYRING_PASSWORD" | gnome-keyring-daemon --unlock --components=secrets --daemonize >/dev/null 2>&1
+# 1. Create login keyring if it doesn't exist (--login creates the keyring file)
+printf '%s\n' "$KEYRING_PASSWORD" | gnome-keyring-daemon --login --components=secrets 2>/dev/null || true
+
+# 2. Start daemon if not running
+if ! pgrep -f "gnome-keyring-daemon" >/dev/null 2>&1; then
+	gnome-keyring-daemon --start --components=secrets --daemonize >/dev/null 2>&1
 fi
 
-# Create default collection if it doesn't exist
-python3 -c "import secretstorage; conn = secretstorage.dbus_init(); secretstorage.get_default_collection(conn)" 2>/dev/null || true
+# 3. Always unlock the keyring
+printf '%s\n' "$KEYRING_PASSWORD" | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1 || true
 
 # Export environment variables for dependent services
 {
