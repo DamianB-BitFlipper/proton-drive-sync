@@ -100,7 +100,14 @@ function runSystemctl(
 ): { success: boolean; error?: string } {
   const systemctlArgs =
     scope === 'user' ? ['systemctl', '--user', ...args] : ['systemctl', ...args];
-  const result = Bun.spawnSync(systemctlArgs);
+
+  // For user scope, ensure XDG_RUNTIME_DIR is set (required for systemctl --user)
+  const env =
+    scope === 'user'
+      ? { ...process.env, XDG_RUNTIME_DIR: `/run/user/${getCurrentUid()}` }
+      : undefined;
+
+  const result = Bun.spawnSync(systemctlArgs, { env });
   if (result.exitCode === 0) {
     return { success: true };
   }
