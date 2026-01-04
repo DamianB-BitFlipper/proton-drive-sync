@@ -7,7 +7,7 @@
 import { existsSync, mkdirSync, unlinkSync, writeFileSync, chmodSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import * as readline from 'readline';
+import { password as passwordPrompt } from '@inquirer/prompts';
 import { setFlag, clearFlag, FLAGS } from '../../flags.js';
 import { logger } from '../../logger.js';
 import type { ServiceOperations, InstallScope } from './types.js';
@@ -180,36 +180,23 @@ function checkDependencies(): { missing: string[]; installCommand: string } {
 // ============================================================================
 
 async function promptKeyringPassword(): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  const question = (prompt: string): Promise<string> => {
-    return new Promise((resolve) => {
-      rl.question(prompt, resolve);
-    });
-  };
-
   console.log('');
   console.log('⚠️  WARNING: The keyring password will be stored in CLEARTEXT in the service file.');
   console.log('This is required for automated keyring unlocking in headless environments.');
   console.log('');
 
-  const password = await question('Enter keyring password: ');
-  const confirm = await question('Confirm keyring password: ');
+  const keyringPassword = await passwordPrompt({ message: 'Enter keyring password:' });
+  const confirm = await passwordPrompt({ message: 'Confirm keyring password:' });
 
-  rl.close();
-
-  if (password !== confirm) {
+  if (keyringPassword !== confirm) {
     throw new Error('Passwords do not match');
   }
 
-  if (!password) {
+  if (!keyringPassword) {
     throw new Error('Password cannot be empty');
   }
 
-  return password;
+  return keyringPassword;
 }
 
 // ============================================================================
