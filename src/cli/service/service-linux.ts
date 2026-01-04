@@ -7,7 +7,6 @@
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { password as passwordPrompt } from '@inquirer/prompts';
 import { setFlag, clearFlag, FLAGS } from '../../flags.js';
 import { logger } from '../../logger.js';
 import type { ServiceOperations, InstallScope } from './types.js';
@@ -19,6 +18,10 @@ import serviceTemplate from './templates/proton-drive-sync.service' with { type:
 // ============================================================================
 
 const SERVICE_NAME = 'proton-drive-sync';
+
+// Default encryption password for file-based credential storage
+// This is stored in the systemd service file anyway, so hardcoding doesn't reduce security
+const ENCRYPTION_PASSWORD = 'proton-drive-sync';
 
 // ============================================================================
 // Path Helpers
@@ -96,32 +99,6 @@ function daemonReload(scope: InstallScope): boolean {
 }
 
 // ============================================================================
-// Encryption Password Prompt
-// ============================================================================
-
-async function promptEncryptionPassword(): Promise<string> {
-  console.log('');
-  console.log(
-    '⚠️  WARNING: The encryption password will be stored in CLEARTEXT in the service file.'
-  );
-  console.log('This is required for automated credential decryption in headless environments.');
-  console.log('');
-
-  const encryptionPassword = await passwordPrompt({ message: 'Enter encryption password:' });
-  const confirm = await passwordPrompt({ message: 'Confirm encryption password:' });
-
-  if (encryptionPassword !== confirm) {
-    throw new Error('Passwords do not match');
-  }
-
-  if (!encryptionPassword) {
-    throw new Error('Password cannot be empty');
-  }
-
-  return encryptionPassword;
-}
-
-// ============================================================================
 // Service File Generation
 // ============================================================================
 
@@ -154,25 +131,15 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
   const paths = getPaths(scope);
 
   return {
-    async install(binPath: string, encryptionPassword?: string): Promise<boolean> {
+    async install(binPath: string): Promise<boolean> {
       // System scope requires root
       if (scope === 'system' && !isRunningAsRoot()) {
         logger.error('System scope requires running with sudo');
         return false;
       }
 
-      // Prompt for encryption password if not provided
-      let password = encryptionPassword;
-      if (!password) {
-        try {
-          password = await promptEncryptionPassword();
-        } catch (error) {
-          logger.error(
-            `Encryption password error: ${error instanceof Error ? error.message : error}`
-          );
-          return false;
-        }
-      }
+      // Use hardcoded encryption password for file-based credential storage
+      const password = ENCRYPTION_PASSWORD;
 
       // Create systemd directory if it doesn't exist
       if (!existsSync(paths.serviceDir)) {

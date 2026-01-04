@@ -57,8 +57,7 @@ function isSupportedPlatform(): boolean {
 
 export async function serviceInstallCommand(
   interactive: boolean = true,
-  scope: InstallScope = 'user',
-  keyringPassword?: string
+  scope: InstallScope = 'user'
 ): Promise<void> {
   if (!isSupportedPlatform()) {
     if (interactive) {
@@ -89,7 +88,7 @@ export async function serviceInstallCommand(
   }
 
   const service = await getServiceManager(scope);
-  await service.install(binPath, keyringPassword);
+  await service.install(binPath);
 }
 
 export async function serviceUninstallCommand(interactive: boolean = true): Promise<void> {

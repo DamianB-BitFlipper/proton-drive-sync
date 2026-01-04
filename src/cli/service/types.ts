@@ -13,7 +13,7 @@ export interface ServiceResult {
 
 export interface ServiceOperations {
   /** Install the service (create config files) */
-  install(binPath: string, keyringPassword?: string): Promise<boolean>;
+  install(binPath: string): Promise<boolean>;
 
   /** Uninstall the service (remove config files) */
   uninstall(interactive: boolean): Promise<boolean>;

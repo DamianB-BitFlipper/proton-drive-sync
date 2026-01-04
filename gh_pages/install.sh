@@ -526,22 +526,10 @@ echo -e ""
 echo -e "${MUTED}Starting authentication...${NC}"
 echo -e ""
 
-# On Linux with service installed, we need to set KEYRING_PASSWORD for file-based credential storage
-# The password was already collected during service install and stored in the service file
-if [ "$os" = "linux" ] && [ "$SERVICE_INSTALLED" = "true" ]; then
-	# Extract KEYRING_PASSWORD from the installed service file
-	if [ "$service_choice" = "2" ]; then
-		SERVICE_FILE="/etc/systemd/system/proton-drive-sync.service"
-	else
-		SERVICE_FILE="$HOME/.config/systemd/user/proton-drive-sync.service"
-	fi
-
-	if [ -f "$SERVICE_FILE" ]; then
-		KEYRING_PASSWORD=$(grep -oP 'KEYRING_PASSWORD=\K[^"]+' "$SERVICE_FILE" 2>/dev/null || echo "")
-		if [ -n "$KEYRING_PASSWORD" ]; then
-			export KEYRING_PASSWORD
-		fi
-	fi
+# On Linux, set KEYRING_PASSWORD for file-based credential storage
+# This must match the hardcoded password in the service file
+if [ "$os" = "linux" ]; then
+	export KEYRING_PASSWORD="proton-drive-sync"
 fi
 
 if ! "$INSTALL_DIR/proton-drive-sync" auth; then

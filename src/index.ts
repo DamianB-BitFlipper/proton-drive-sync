@@ -110,10 +110,7 @@ serviceCommand
   .command('install')
   .description('Install and start the system service')
   .option('--install-scope <scope>', 'Install scope: user or system (Linux only)', 'user')
-  .option('--keyring-password <password>', 'Keyring password for Linux (prompted if not provided)')
-  .action((options) =>
-    serviceInstallCommand(true, options.installScope as InstallScope, options.keyringPassword)
-  );
+  .action((options) => serviceInstallCommand(true, options.installScope as InstallScope));
 
 serviceCommand
   .command('uninstall')
