@@ -6,7 +6,7 @@ MUTED='\033[0;2m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-INSTALL_DIR=$HOME/.local/bin
+INSTALL_DIR="$HOME/.local/bin"
 
 # Detect OS
 raw_os=$(uname -s)
@@ -30,12 +30,14 @@ echo -e "${MUTED}Uninstalling Proton Drive Sync...${NC}"
 echo -e ""
 
 # Uninstall service files if proton-drive-sync exists
-if command -v proton-drive-sync >/dev/null 2>&1; then
+if [[ -f "$INSTALL_DIR/$APP" ]]; then
 	echo -e "${MUTED}Removing service files...${NC}"
-	proton-drive-sync service uninstall -y || true
-elif [[ -f "$INSTALL_DIR/$APP" ]]; then
-	echo -e "${MUTED}Removing service files...${NC}"
-	"$INSTALL_DIR/$APP" service uninstall -y || true
+	# Try user service first
+	"$INSTALL_DIR/$APP" service uninstall -y 2>/dev/null || true
+	# Try system service with sudo (needed for /etc/systemd/system/ files)
+	if [ "$os" = "linux" ]; then
+		sudo "$INSTALL_DIR/$APP" service uninstall -y 2>/dev/null || true
+	fi
 fi
 
 # Remove the binary
@@ -44,6 +46,24 @@ if [[ -f "$INSTALL_DIR/$APP" ]]; then
 	echo -e "${MUTED}Removed ${NC}$INSTALL_DIR/$APP"
 else
 	echo -e "${MUTED}Binary not found at $INSTALL_DIR/$APP${NC}"
+fi
+
+# Linux-specific cleanup
+if [ "$os" = "linux" ]; then
+	# Remove system-level directories if they exist
+	if [[ -d "/etc/proton-drive-sync" ]]; then
+		sudo rm -rf /etc/proton-drive-sync
+		echo -e "${MUTED}Removed ${NC}/etc/proton-drive-sync"
+	fi
+	if [[ -d "/var/lib/proton-drive-sync" ]]; then
+		sudo rm -rf /var/lib/proton-drive-sync
+		echo -e "${MUTED}Removed ${NC}/var/lib/proton-drive-sync"
+	fi
+
+	# Remove keyring dummy secret if secret-tool is available
+	if command -v secret-tool >/dev/null 2>&1; then
+		secret-tool clear service proton-drive-sync type init 2>/dev/null || true
+	fi
 fi
 
 echo -e ""
@@ -163,6 +183,14 @@ if command -v watchman >/dev/null 2>&1; then
 			echo -e "${RED}Unknown OS. Please remove Watchman manually.${NC}"
 		fi
 	fi
+fi
+
+# Note about Linux packages
+if [ "$os" = "linux" ]; then
+	echo -e ""
+	echo -e "${MUTED}Note: The following packages were installed as dependencies and may be${NC}"
+	echo -e "${MUTED}used by other applications. Remove them manually if no longer needed:${NC}"
+	echo -e "${MUTED}  sudo apt remove libsecret-1-0 libsecret-tools gnome-keyring dbus-x11 jq${NC}"
 fi
 
 echo -e ""

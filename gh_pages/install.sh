@@ -270,7 +270,7 @@ install_linux_dependencies() {
 
 	if command -v apt-get >/dev/null 2>&1; then
 		sudo apt-get update
-		sudo apt-get install -y libsecret-1-0 gnome-keyring dbus-x11 jq
+		sudo apt-get install -y libsecret-1-0 libsecret-tools gnome-keyring dbus-x11 jq
 	elif command -v dnf >/dev/null 2>&1; then
 		sudo dnf install -y libsecret gnome-keyring dbus-x11 jq
 	elif command -v pacman >/dev/null 2>&1; then
