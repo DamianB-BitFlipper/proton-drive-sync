@@ -1262,7 +1262,7 @@ app.get('/api/events', async (c) => {
       cachedProcessing = applyListDiff(cachedProcessing, diff.addProcessing, diff.removeProcessing);
       cachedBlocked = [...cachedBlocked, ...diff.addBlocked]; // append-only
       cachedPending = applyListDiff(cachedPending, diff.addPending, diff.removePending);
-      cachedRecent = [...cachedRecent, ...diff.addRecent]; // append-only
+      cachedRecent = [...diff.addRecent, ...cachedRecent]; // prepend new items (newest first)
       cachedRetry = applyListDiff(cachedRetry, diff.addRetry, diff.removeRetry);
 
       // Debounce the fragment push

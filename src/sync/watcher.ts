@@ -160,8 +160,19 @@ function unsubscribeWatchman(root: string, subName: string): Promise<void> {
   });
 }
 
+interface WatchmanQueryOptions {
+  savedClock: string | null;
+  relative: string;
+  /** Wait for filesystem to settle before delivering events (milliseconds) */
+  settlePeriod?: number;
+  /** Max time to wait for settle period to be satisfied (milliseconds) */
+  settleTimeout?: number;
+}
+
 /** Build a Watchman query/subscription object */
-function buildWatchmanQuery(savedClock: string | null, relative: string): Record<string, unknown> {
+function buildWatchmanQuery(options: WatchmanQueryOptions): Record<string, unknown> {
+  const { savedClock, relative, settlePeriod, settleTimeout } = options;
+
   const query: Record<string, unknown> = {
     expression: ['anyof', ['type', 'f'], ['type', 'd']],
     fields: ['name', 'size', 'mtime_ms', 'exists', 'type', 'new', 'ino', 'content.sha1hex'],
@@ -173,6 +184,12 @@ function buildWatchmanQuery(savedClock: string | null, relative: string): Record
 
   if (relative) {
     query.relative_root = relative;
+  }
+
+  // Settle parameters must be specified together
+  if (settlePeriod !== undefined && settleTimeout !== undefined) {
+    query.settle_period = settlePeriod;
+    query.settle_timeout = settleTimeout;
   }
 
   return query;
@@ -210,7 +227,7 @@ export async function queryAllChanges(
         logger.info(`First run - syncing all existing files in ${dir.source_path}...`);
       }
 
-      const query = buildWatchmanQuery(savedClock, relative);
+      const query = buildWatchmanQuery({ savedClock, relative });
       const resp = await queryWatchman(root, query);
 
       // Save clock
@@ -321,7 +338,14 @@ export async function setupWatchSubscriptions(
         logger.info(`First run - syncing all existing files in ${dir.source_path}...`);
       }
 
-      const sub = buildWatchmanQuery(savedClock, relative);
+      // Wait for filesystem to settle before delivering events
+      // This prevents premature processing of files still being written
+      const sub = buildWatchmanQuery({
+        savedClock,
+        relative,
+        settlePeriod: 2000, // 2 seconds of no changes before delivering
+        settleTimeout: 10000, // Max 10 seconds wait if changes keep coming
+      });
 
       // Register subscription
       await subscribeWatchman(root, subName, sub);
