@@ -1,0 +1,36 @@
+services:
+  proton-drive-sync:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ghcr.io/damianb-bitflipper/proton-drive-sync:latest
+    container_name: proton-drive-sync
+    restart: unless-stopped
+
+    environment:
+      - KEYRING_PASSWORD=${KEYRING_PASSWORD}
+      - TZ=${TZ:-UTC}
+
+    volumes:
+      # Persistent config (credentials.enc, config.json)
+      - config:/config/proton-drive-sync
+      # Persistent state (state.db, sync.log)
+      - state:/state/proton-drive-sync
+      # Sync directories - customize these paths
+      - ${SYNC_DIR_1:-./data/documents}:/data/documents
+      - ${SYNC_DIR_2:-./data/photos}:/data/photos
+
+    ports:
+      - '${DASHBOARD_PORT:-4242}:4242'
+
+    # Required for Watchman inotify file watching
+    sysctls:
+      - fs.inotify.max_user_watches=524288
+      - fs.inotify.max_user_instances=512
+
+    # Allow graceful shutdown
+    stop_grace_period: 30s
+
+volumes:
+  config:
+  state:

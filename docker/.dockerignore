@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+
+# Environment files (don't leak secrets)
+.env
+docker/.env
+
+# macOS
+.DS_Store
+
+# Documentation (not needed in image)
+README.md
+DEVELOPMENT.md
+DOCKER_SETUP.md
+LICENSE
+AGENTS.md
+
+# Development files
+Makefile
+.husky/
+.prettierrc
+eslint.config.js
+drizzle.config.ts
+tailwind.config.js
+
+# Assets not needed for build
+readme_assets/
+gh_pages/
+
+# Docker runtime directories (created at runtime)
+docker/data/

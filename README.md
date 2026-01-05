@@ -27,6 +27,23 @@ irm https://www.damianb.dev/proton-drive-sync/install.ps1 | iex
 
 </details>
 
+<details>
+<summary>Install: Docker</summary>
+
+See **[DOCKER_SETUP.md](DOCKER_SETUP.md)** for running with Docker Compose on Linux x86_64 and ARM64.
+
+Quick start:
+
+```bash
+cd docker/
+cp .env.example .env
+# Edit .env with KEYRING_PASSWORD and sync directory paths
+docker compose up -d
+docker exec -it proton-drive-sync proton-drive-sync auth
+```
+
+</details>
+
 ### Platform Support
 
 | Platform            | Requirements                                                |
@@ -34,6 +51,7 @@ irm https://www.damianb.dev/proton-drive-sync/install.ps1 | iex
 | **macOS**           | [Homebrew](https://brew.sh) (for Watchman)                  |
 | **Linux** (beta)    | No extra requirements                                       |
 | **Windows** (alpha) | [Chocolatey](https://chocolatey.org/install) (for Watchman) |
+| **Docker**          | Docker Engine 20.10+, Docker Compose v2.0+                  |
 
 ### Dashboard
 
