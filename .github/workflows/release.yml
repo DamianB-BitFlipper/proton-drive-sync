@@ -3,41 +3,12 @@ name: Release
 on:
   release:
     types: [created]
-  workflow_dispatch:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
-  deploy-pages:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: gh_pages
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
   build:
-    needs: deploy-pages
     if: github.event_name == 'release'
     strategy:
       matrix:
@@ -64,37 +35,6 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install Watchman (macOS)
-        if: runner.os == 'macOS'
-        run: brew install watchman
-
-      - name: Install Watchman (Linux x64)
-        if: runner.os == 'Linux' && matrix.target == 'linux-x64'
-        run: |
-          VERSION=$(curl -s https://api.github.com/repos/facebook/watchman/releases/latest | jq -r '.tag_name')
-          curl -L -o watchman.zip "https://github.com/facebook/watchman/releases/download/${VERSION}/watchman-${VERSION}-linux.zip"
-          unzip watchman.zip
-          sudo mkdir -p /usr/local/bin /usr/local/lib /usr/local/var/run/watchman
-          sudo cp watchman-*/bin/watchman /usr/local/bin/
-          sudo cp -r watchman-*/lib/* /usr/local/lib/ 2>/dev/null || true
-          sudo chmod +x /usr/local/bin/watchman
-          sudo chmod 1777 /usr/local/var/run/watchman
-
-      - name: Install Watchman (Linux ARM64)
-        if: runner.os == 'Linux' && matrix.target == 'linux-arm64'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y libssl3
-          curl -fsSL -o watchman.deb "https://www.damianb.dev/proton-drive-sync/watchman_2025.12.29.00_arm64.deb"
-          sudo apt-get install -y ./watchman.deb
-
-      - name: Install Watchman (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          choco install watchman -y
-          refreshenv
-
       - name: Install dependencies
         run: bun install
 
@@ -108,57 +48,27 @@ jobs:
 
       - name: Create tarball (Unix)
         if: runner.os != 'Windows'
-        run: |
-          tar -czvf proton-drive-sync-${{ matrix.target }}.tar.gz proton-drive-sync
+        run: tar -czvf proton-drive-sync-${{ matrix.target }}.tar.gz proton-drive-sync
 
       - name: Create zip (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          Compress-Archive -Path proton-drive-sync.exe -DestinationPath proton-drive-sync-${{ matrix.target }}.zip
+        run: Compress-Archive -Path proton-drive-sync.exe -DestinationPath proton-drive-sync-${{ matrix.target }}.zip
 
-      - name: Upload artifact (Unix)
+      - name: Upload to release (Unix)
         if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: proton-drive-sync-${{ matrix.target }}
-          path: proton-drive-sync-${{ matrix.target }}.tar.gz
-
-      - name: Upload artifact (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: proton-drive-sync-${{ matrix.target }}
-          path: proton-drive-sync-${{ matrix.target }}.zip
-
-  upload-release:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/**/*.tar.gz
-            artifacts/**/*.zip
-          generate_release_notes: true
+          files: proton-drive-sync-${{ matrix.target }}.tar.gz
 
-      - name: Trigger Homebrew tap update
-        uses: peter-evans/repository-dispatch@v3
+      - name: Upload to release (Windows)
+        if: runner.os == 'Windows'
+        uses: softprops/action-gh-release@v2
         with:
-          token: ${{ secrets.TAP_UPDATE_TOKEN }}
-          repository: DamianB-BitFlipper/homebrew-tap
-          event-type: update-formula
-          client-payload: '{"version": "${{ github.event.release.tag_name }}"}'
+          files: proton-drive-sync-${{ matrix.target }}.zip
 
-  build-linux-packages:
-    needs: upload-release
+  package:
+    needs: build
     runs-on: ubuntu-latest
 
     steps:
@@ -243,3 +153,11 @@ jobs:
             proton-drive-sync-${VERSION}-1.aarch64.rpm
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Trigger Homebrew tap update
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.TAP_UPDATE_TOKEN }}
+          repository: DamianB-BitFlipper/homebrew-tap
+          event-type: update-formula
+          client-payload: '{"version": "${{ github.event.release.tag_name }}"}'
