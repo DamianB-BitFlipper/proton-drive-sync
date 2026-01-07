@@ -12,6 +12,11 @@ import { logger } from '../logger.js';
 import { type Config } from '../config.js';
 import { db } from '../db/index.js';
 import { fileHashes } from '../db/schema.js';
+import {
+  WATCHER_DEBOUNCE_MS,
+  RECONCILIATION_INTERVAL_MS,
+  DIRTY_PATH_DEBOUNCE_MS,
+} from './constants.js';
 
 // ============================================================================
 // Types
@@ -35,9 +40,6 @@ export type FileChangeBatchHandler = (files: FileChange[]) => void;
 // Constants
 // ============================================================================
 
-const DEBOUNCE_MS = 200;
-const RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-
 // ============================================================================
 // State
 // ============================================================================
@@ -45,8 +47,8 @@ const RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 /** Track active fs.watch watchers for teardown */
 const activeWatchers: Map<string, FSWatcher> = new Map();
 
-/** Track paths with recent events for incremental reconciliation */
-const dirtyPaths: Set<string> = new Set();
+/** Track paths with recent events for incremental reconciliation (path -> timestamp when first marked dirty) */
+const dirtyPaths: Map<string, number> = new Map();
 
 /** Debounce timers per path */
 const debounceTimers: Map<string, Timer> = new Map();
@@ -102,7 +104,7 @@ function getAllStoredHashes(syncDirPath: string): Map<string, string> {
 /**
  * Scan a directory recursively and return all files/directories with their stats
  */
-async function scanDirectory(
+export async function scanDirectory(
   watchDir: string
 ): Promise<Map<string, { size: number; mtime_ms: number; isDirectory: boolean; ino: number }>> {
   const results = new Map<
@@ -292,8 +294,10 @@ function handleDebouncedEvent(
   const fullPath = join(watchDir, filename);
   const relativePath = filename;
 
-  // Add to dirty paths for incremental reconciliation
-  dirtyPaths.add(fullPath);
+  // Add to dirty paths for incremental reconciliation (only if not already tracked)
+  if (!dirtyPaths.has(fullPath)) {
+    dirtyPaths.set(fullPath, Date.now());
+  }
 
   try {
     if (existsSync(fullPath)) {
@@ -384,7 +388,7 @@ export async function setupWatchSubscriptions(
         const timer = setTimeout(() => {
           debounceTimers.delete(timerKey);
           handleDebouncedEvent(watchDir, filename, onFileChangeBatch);
-        }, DEBOUNCE_MS);
+        }, WATCHER_DEBOUNCE_MS);
 
         debounceTimers.set(timerKey, timer);
       });
@@ -483,13 +487,29 @@ function runIncrementalReconciliation(): void {
     return;
   }
 
-  logger.debug(`[reconcile] Running incremental reconciliation on ${dirtyPaths.size} paths`);
+  // Filter to paths that have been dirty for at least DIRTY_PATH_DEBOUNCE_MS
+  const now = Date.now();
+  const eligiblePaths: string[] = [];
+  for (const [fullPath, timestamp] of dirtyPaths) {
+    if (now - timestamp >= DIRTY_PATH_DEBOUNCE_MS) {
+      eligiblePaths.push(fullPath);
+    }
+  }
+
+  if (eligiblePaths.length === 0) {
+    logger.debug(
+      `[reconcile] ${dirtyPaths.size} dirty paths not yet eligible (debouncing for ${DIRTY_PATH_DEBOUNCE_MS / 1000}s)`
+    );
+    return;
+  }
+
+  logger.debug(`[reconcile] Running incremental reconciliation on ${eligiblePaths.length} paths`);
 
   const changes: FileChange[] = [];
 
   // Group dirty paths by watch root
   const pathsByRoot = new Map<string, string[]>();
-  for (const fullPath of dirtyPaths) {
+  for (const fullPath of eligiblePaths) {
     const watchDir = reconciliationConfig.sync_dirs.find((d) =>
       fullPath.startsWith(d.source_path)
     )?.source_path;
@@ -559,8 +579,10 @@ function runIncrementalReconciliation(): void {
     }
   }
 
-  // Clear dirty paths after reconciliation
-  dirtyPaths.clear();
+  // Clear only the paths that were checked (eligible paths)
+  for (const fullPath of eligiblePaths) {
+    dirtyPaths.delete(fullPath);
+  }
 
   // Emit any missed changes
   if (changes.length > 0) {

@@ -17,6 +17,15 @@ export const SHUTDOWN_TIMEOUT_MS = 2_000;
 /** Time after which a PROCESSING job is considered stale (10 minutes) */
 export const STALE_PROCESSING_MS = 10 * 60 * 1000;
 
+/** Debounce time for file watcher events (200ms) */
+export const WATCHER_DEBOUNCE_MS = 200;
+
+/** Interval for running incremental reconciliation checks (1 minute) */
+export const RECONCILIATION_INTERVAL_MS = 1 * 60 * 1000;
+
+/** Time a dirty path must wait before being eligible for reconciliation (5 minutes) */
+export const DIRTY_PATH_DEBOUNCE_MS = 5 * 60 * 1000;
+
 // ============================================================================
 // Retry Configuration
 // ============================================================================

@@ -4,7 +4,14 @@
  * Drizzle ORM schema for SQLite state storage.
  */
 
-import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import {
+  sqliteTable,
+  text,
+  integer,
+  index,
+  uniqueIndex,
+  primaryKey,
+} from 'drizzle-orm/sqlite-core';
 
 // ============================================================================
 // Enums
@@ -20,12 +27,10 @@ export const SyncJobStatus = {
 export type SyncJobStatus = (typeof SyncJobStatus)[keyof typeof SyncJobStatus];
 
 export const SyncEventType = {
-  CREATE: 'CREATE',
+  CREATE_FILE: 'CREATE_FILE',
+  CREATE_DIR: 'CREATE_DIR',
   UPDATE: 'UPDATE',
   DELETE: 'DELETE',
-  RENAME: 'RENAME',
-  MOVE: 'MOVE',
-  DELETE_AND_CREATE: 'DELETE_AND_CREATE',
 } as const;
 
 export type SyncEventType = (typeof SyncEventType)[keyof typeof SyncEventType];
@@ -80,7 +85,7 @@ export const syncJobs = sqliteTable(
   },
   (table) => [
     index('idx_sync_jobs_status_retry').on(table.status, table.retryAt),
-    uniqueIndex('idx_sync_jobs_local_path').on(table.localPath),
+    uniqueIndex('idx_sync_jobs_local_remote').on(table.localPath, table.remotePath),
   ]
 );
 
@@ -110,13 +115,19 @@ export const fileHashes = sqliteTable('file_hashes', {
 /**
  * Node mapping table for tracking Proton Drive nodeUids.
  * Used to support rename/move operations without re-uploading.
+ * Composite key (localPath, remotePath) supports overlapping sync dirs.
  */
-export const nodeMapping = sqliteTable('node_mapping', {
-  localPath: text('local_path').primaryKey(),
-  nodeUid: text('node_uid').notNull(),
-  parentNodeUid: text('parent_node_uid').notNull(),
-  isDirectory: integer('is_directory', { mode: 'boolean' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' })
-    .notNull()
-    .$defaultFn(() => new Date()),
-});
+export const nodeMapping = sqliteTable(
+  'node_mapping',
+  {
+    localPath: text('local_path').notNull(),
+    remotePath: text('remote_path').notNull(),
+    nodeUid: text('node_uid').notNull(),
+    parentNodeUid: text('parent_node_uid').notNull(),
+    isDirectory: integer('is_directory', { mode: 'boolean' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [primaryKey({ columns: [table.localPath, table.remotePath] })]
+);

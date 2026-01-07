@@ -1459,6 +1459,7 @@ export class ProtonAuth {
       // Check for error code 10013 or related messages
       return (
         message.includes('10013') ||
+        message.includes('invalid_refresh_token') ||
         message.includes('invalid refresh token') ||
         message.includes('refresh token') ||
         message.includes('session expired')

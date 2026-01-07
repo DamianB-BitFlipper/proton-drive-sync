@@ -2,10 +2,9 @@
  * Sync Engine
  *
  * Orchestrates the sync process: coordinates watcher, queue, and processor.
- * Includes inode-based rename/move detection and content hash comparison.
  */
 
-import { join, basename, dirname } from 'path';
+import { join } from 'path';
 import { db } from '../db/index.js';
 import { SyncEventType } from '../db/schema.js';
 import { logger } from '../logger.js';
@@ -36,14 +35,12 @@ import {
   getStoredHash,
   deleteStoredHash,
   deleteStoredHashesUnderPath,
-  updateStoredHashesUnderPath,
   cleanupOrphanedHashes,
 } from './hashes.js';
 import {
   getNodeMapping,
   deleteNodeMapping,
   deleteNodeMappingsUnderPath,
-  updateNodeMappingsUnderPath,
   cleanupOrphanedNodeMappings,
 } from './nodes.js';
 import { JOB_POLL_INTERVAL_MS, SHUTDOWN_TIMEOUT_MS } from './constants.js';
@@ -59,275 +56,166 @@ export interface SyncOptions {
   watch: boolean;
 }
 
-interface FileChangeWithPaths extends FileChange {
-  localPath: string;
-  remotePath: string;
-}
-
 // ============================================================================
 // Path Helpers
 // ============================================================================
 
 /**
- * Build local and remote paths for a file change event.
+ * Resolve the sync target for a file change event.
+ * Each watcher event is tied to a specific sync_dir via its watchRoot.
  */
-function buildPaths(file: FileChange, config: Config): { localPath: string; remotePath: string } {
+function resolveSyncTarget(
+  file: FileChange,
+  config: Config
+): { localPath: string; remotePath: string } | null {
   const localPath = join(file.watchRoot, file.name);
 
-  // Find the sync dir config for this watch root
-  const syncDir = config.sync_dirs.find((d) => file.watchRoot.startsWith(d.source_path));
-  const remoteRoot = syncDir?.remote_root || '';
+  // Find the sync_dir that matches this watcher's root
+  const syncDir = config.sync_dirs.find((d) => {
+    const sourcePath = d.source_path.endsWith('/') ? d.source_path.slice(0, -1) : d.source_path;
+    return file.watchRoot === sourcePath;
+  });
 
-  // Build remote path: remote_root/dirName/file.name
-  const dirName = basename(file.watchRoot);
-  const remotePath = remoteRoot
-    ? `${remoteRoot}/${dirName}/${file.name}`
-    : `${dirName}/${file.name}`;
+  if (!syncDir) return null;
+
+  // Calculate relative path from this sync_dir's root
+  const sourcePath = syncDir.source_path.endsWith('/')
+    ? syncDir.source_path.slice(0, -1)
+    : syncDir.source_path;
+  const relative = localPath === sourcePath ? '' : localPath.slice(sourcePath.length + 1);
+  const remotePath = relative ? `${syncDir.remote_root}/${relative}` : syncDir.remote_root;
 
   return { localPath, remotePath };
 }
 
 // ============================================================================
-// Batch File Change Handler
+// File Change Handler
 // ============================================================================
 
 /**
- * Process a batch of file change events with rename/move detection.
+ * Process a single file change event.
+ * Each watcher event creates one sync job for its corresponding sync_dir.
  */
-function handleFileChangeBatch(files: FileChange[], config: Config, dryRun: boolean): void {
-  if (files.length === 0) return;
+function handleFileChange(file: FileChange, config: Config, dryRun: boolean): void {
+  const target = resolveSyncTarget(file, config);
 
-  // Augment files with computed paths
-  const filesWithPaths: FileChangeWithPaths[] = files.map((file) => ({
-    ...file,
-    ...buildPaths(file, config),
-  }));
-
-  // Separate events by type
-  const deletes = filesWithPaths.filter((f) => !f.exists);
-  const creates = filesWithPaths.filter((f) => f.exists && f.new);
-  const updates = filesWithPaths.filter((f) => f.exists && !f.new);
-
-  // Build inode maps for rename/move detection
-  const deletesByIno = new Map<number, FileChangeWithPaths>();
-  for (const file of deletes) {
-    deletesByIno.set(file.ino, file);
+  if (!target) {
+    logger.warn(`[watcher] No matching sync_dir for: ${file.name}`);
+    return;
   }
 
-  const createsByIno = new Map<number, FileChangeWithPaths>();
-  for (const file of creates) {
-    createsByIno.set(file.ino, file);
-  }
+  const { localPath, remotePath } = target;
 
-  // Match renames/moves (same ino in both maps)
-  const renames: Array<{ from: FileChangeWithPaths; to: FileChangeWithPaths }> = [];
-  for (const [ino, deleteFile] of deletesByIno) {
-    const createFile = createsByIno.get(ino);
-    if (createFile) {
-      renames.push({ from: deleteFile, to: createFile });
-      deletesByIno.delete(ino);
-      createsByIno.delete(ino);
-    }
-  }
-
-  // Identify directory renames in this batch
-  const directoryRenames = renames.filter(({ from }) => from.type === 'd');
-
-  // Filter out children whose parent directory is also being renamed in the same batch.
-  // When a directory is renamed, Proton Drive moves all children implicitly, so we don't
-  // need separate MOVE jobs for them - they would fail with "item already exists".
-  const filteredRenames = renames.filter(({ from }) => {
-    // Always keep directory renames
-    if (from.type === 'd') return true;
-
-    // Check if this file's old path is under any directory being renamed
-    for (const { from: dirFrom } of directoryRenames) {
-      const oldDirPath = dirFrom.localPath;
-      if (from.localPath.startsWith(oldDirPath + '/')) {
-        logger.debug(`[skip] child of renamed directory: ${from.name}`);
-        return false;
-      }
-    }
-    return true;
-  });
-
-  // Process renames/moves (one transaction per event)
-  for (const { from, to } of filteredRenames) {
-    db.transaction((tx) => {
-      const isFile = from.type !== 'd';
-      const isSameParent = dirname(from.localPath) === dirname(to.localPath);
-      const nodeMapping = getNodeMapping(from.localPath, tx);
-
-      // Check if we need DELETE_AND_CREATE (no mapping, or content changed for files)
-      const noMapping = !nodeMapping;
-      const storedHash = isFile ? getStoredHash(from.localPath, tx) : null;
-      // Use mtime:size as change indicator
-      const newHash = `${to.mtime_ms}:${to.size}`;
-      const contentChanged = isFile && storedHash && storedHash !== newHash;
-
-      if (noMapping || contentChanged) {
-        const reason = noMapping ? 'no mapping' : 'content changed';
-        logger.info(`[delete+create] ${from.name} -> ${to.name} (${reason})`);
-        enqueueJob(
-          {
-            eventType: SyncEventType.DELETE_AND_CREATE,
-            localPath: to.localPath,
-            remotePath: to.remotePath,
-            contentHash: newHash,
-            oldLocalPath: from.localPath,
-            oldRemotePath: from.remotePath,
-          },
-          dryRun,
-          tx
-        );
-        deleteStoredHash(from.localPath, dryRun, tx);
-        deleteNodeMapping(from.localPath, dryRun, tx);
-        if (!isFile) {
-          deleteStoredHashesUnderPath(from.localPath, tx);
-          deleteNodeMappingsUnderPath(from.localPath, tx);
-        }
-        return;
-      }
-
-      // Pure rename/move (no content change)
-      const eventType = isSameParent ? SyncEventType.RENAME : SyncEventType.MOVE;
-      const typeLabel = to.type === 'd' ? 'dir' : 'file';
-      logger.info(`[${eventType.toLowerCase()}] ${from.name} -> ${to.name} (type: ${typeLabel})`);
-
-      enqueueJob(
-        {
-          eventType,
-          localPath: to.localPath,
-          remotePath: to.remotePath,
-          contentHash: `${to.mtime_ms}:${to.size}`,
-          oldLocalPath: from.localPath,
-          oldRemotePath: from.remotePath,
-        },
-        dryRun,
-        tx
-      );
-
-      // For directory renames, update all child mappings/hashes to their new paths.
-      // The children were filtered out above, so we need to update their paths here.
-      if (!isFile) {
-        updateNodeMappingsUnderPath(from.localPath, to.localPath, dryRun, tx);
-        updateStoredHashesUnderPath(from.localPath, to.localPath, dryRun, tx);
-      }
-    });
-  }
-
-  // Process remaining deletes (one transaction per event)
-  for (const file of deletesByIno.values()) {
+  if (!file.exists) {
+    // DELETE event
     db.transaction((tx) => {
       const typeLabel = file.type === 'd' ? 'dir' : 'file';
       logger.info(`[watcher] [delete] ${file.name} (type: ${typeLabel})`);
-      logger.debug(
-        `[watcher] [delete] ${file.name} (type: ${typeLabel}, ino: ${file.ino}, size: ${file.size})`
-      );
 
       enqueueJob(
         {
           eventType: SyncEventType.DELETE,
-          localPath: file.localPath,
-          remotePath: file.remotePath,
+          localPath,
+          remotePath,
           contentHash: null,
-          oldLocalPath: null,
-          oldRemotePath: null,
         },
         dryRun,
         tx
       );
 
-      deleteStoredHash(file.localPath, dryRun, tx);
-      deleteNodeMapping(file.localPath, dryRun, tx);
+      deleteStoredHash(localPath, dryRun, tx);
+      deleteNodeMapping(localPath, remotePath, dryRun, tx);
       if (file.type === 'd') {
-        deleteStoredHashesUnderPath(file.localPath, tx);
-        deleteNodeMappingsUnderPath(file.localPath, tx);
+        deleteStoredHashesUnderPath(localPath, tx);
+        deleteNodeMappingsUnderPath(localPath, remotePath, tx);
       }
     });
+    return;
   }
 
-  // Process remaining creates (one transaction per event)
-  for (const file of createsByIno.values()) {
-    db.transaction((tx) => {
-      const typeLabel = file.type === 'd' ? 'dir' : 'file';
+  // File/directory exists - check if it's new or updated
+  const isDirectory = file.type === 'd';
+  const newHash = `${file.mtime_ms}:${file.size}`;
 
-      // For files, check if mtime+size already matches stored value (already synced)
-      if (file.type !== 'd') {
-        const storedHash = getStoredHash(file.localPath, tx);
-        const newHash = `${file.mtime_ms}:${file.size}`;
+  if (file.new) {
+    // CREATE event
+    db.transaction((tx) => {
+      if (isDirectory) {
+        // Check if directory already synced for this remote target
+        const existingMapping = getNodeMapping(localPath, remotePath, tx);
+        if (existingMapping) {
+          logger.debug(`[skip] create directory already synced: ${file.name} -> ${remotePath}`);
+          return;
+        }
+        logger.info(`[watcher] [create_dir] ${file.name}`);
+        enqueueJob(
+          {
+            eventType: SyncEventType.CREATE_DIR,
+            localPath,
+            remotePath,
+            contentHash: newHash,
+          },
+          dryRun,
+          tx
+        );
+      } else {
+        // File - check if mtime+size matches stored value
+        const storedHash = getStoredHash(localPath, tx);
         if (storedHash && storedHash === newHash) {
           logger.debug(`[skip] create mtime+size unchanged: ${file.name}`);
           return;
         }
-      } else {
-        // For directories, check if we already have a node mapping (already synced)
-        const existingMapping = getNodeMapping(file.localPath, tx);
-        if (existingMapping) {
-          logger.debug(`[skip] create directory already synced: ${file.name}`);
-          return;
-        }
+        logger.info(`[watcher] [create] ${file.name}`);
+        enqueueJob(
+          {
+            eventType: SyncEventType.CREATE_FILE,
+            localPath,
+            remotePath,
+            contentHash: newHash,
+          },
+          dryRun,
+          tx
+        );
       }
-
-      logger.info(`[watcher] [create] ${file.name} (type: ${typeLabel})`);
-      logger.debug(
-        `[watcher] [create] ${file.name} (type: ${typeLabel}, mtime: ${file.mtime_ms}, ino: ${file.ino}, size: ${file.size})`
-      );
-
-      enqueueJob(
-        {
-          eventType: SyncEventType.CREATE,
-          localPath: file.localPath,
-          remotePath: file.remotePath,
-          contentHash: `${file.mtime_ms}:${file.size}`,
-          oldLocalPath: null,
-          oldRemotePath: null,
-        },
-        dryRun,
-        tx
-      );
     });
+    return;
   }
 
-  // Process updates (one transaction per event, files only)
-  for (const file of updates) {
-    if (file.type === 'd') {
-      // Directory metadata change - skip
-      logger.debug(`[skip] directory metadata change: ${file.name}`);
-      continue;
+  // UPDATE event (file only - directory metadata changes are skipped)
+  if (isDirectory) {
+    logger.debug(`[skip] directory metadata change: ${file.name}`);
+    return;
+  }
+
+  db.transaction((tx) => {
+    const storedHash = getStoredHash(localPath, tx);
+    if (storedHash && storedHash === newHash) {
+      logger.debug(`[skip] mtime+size unchanged: ${file.name}`);
+      return;
     }
 
-    db.transaction((tx) => {
-      // File update - compare mtime+size
-      const storedHash = getStoredHash(file.localPath, tx);
-      const newHash = `${file.mtime_ms}:${file.size}`;
+    logger.info(
+      `[watcher] [update] ${file.name} (mtime+size: ${storedHash || 'none'} -> ${newHash})`
+    );
+    enqueueJob(
+      {
+        eventType: SyncEventType.UPDATE,
+        localPath,
+        remotePath,
+        contentHash: newHash,
+      },
+      dryRun,
+      tx
+    );
+  });
+}
 
-      if (storedHash && storedHash === newHash) {
-        // Content unchanged - skip
-        logger.debug(`[skip] mtime+size unchanged: ${file.name}`);
-        return;
-      }
-
-      logger.info(
-        `[watcher] [update] ${file.name} (mtime+size: ${storedHash || 'none'} -> ${newHash})`
-      );
-      logger.debug(
-        `[watcher] [update] ${file.name} (mtime+size: ${storedHash || 'none'} -> ${newHash}, ino: ${file.ino})`
-      );
-
-      enqueueJob(
-        {
-          eventType: SyncEventType.UPDATE,
-          localPath: file.localPath,
-          remotePath: file.remotePath,
-          contentHash: newHash,
-          oldLocalPath: null,
-          oldRemotePath: null,
-        },
-        dryRun,
-        tx
-      );
-    });
+/**
+ * Process a batch of file change events (from startup scan or reconciliation).
+ */
+function handleFileChangeBatch(files: FileChange[], config: Config, dryRun: boolean): void {
+  for (const file of files) {
+    handleFileChange(file, config, dryRun);
   }
 }
 
@@ -346,11 +234,11 @@ export async function runOneShotSync(options: SyncOptions): Promise<void> {
   // Clean up stale/orphaned data from previous run
   db.transaction((tx) => {
     cleanupOrphanedJobs(dryRun, tx);
-    cleanupOrphanedHashes(tx);
     cleanupOrphanedNodeMappings(tx);
+    cleanupOrphanedHashes(tx);
   });
 
-  // Query all changes and enqueue jobs (batch handler)
+  // Query all changes and enqueue jobs
   const totalChanges = await queryAllChanges(config, (files) =>
     handleFileChangeBatch(files, config, dryRun)
   );
@@ -384,19 +272,28 @@ export async function runWatchMode(options: SyncOptions): Promise<void> {
   // Initialize concurrency from config
   setSyncConcurrency(config.sync_concurrency);
 
-  // Helper to create file change batch handler with current config
-  const createBatchHandler = () => (files: FileChange[]) =>
+  // Helper to create file change handler with current config
+  const createChangeHandler = () => (files: FileChange[]) =>
     handleFileChangeBatch(files, getConfig(), dryRun);
 
   // Clean up stale/orphaned data from previous run
   db.transaction((tx) => {
     cleanupOrphanedJobs(dryRun, tx);
-    cleanupOrphanedHashes(tx);
     cleanupOrphanedNodeMappings(tx);
+    cleanupOrphanedHashes(tx);
   });
 
-  // Set up file watching
-  await setupWatchSubscriptions(config, createBatchHandler());
+  // Scan for changes that happened while we were offline
+  logger.info('Checking for changes since last run...');
+  const totalChanges = await queryAllChanges(config, createChangeHandler());
+  if (totalChanges > 0) {
+    logger.info(`Found ${totalChanges} changes since last run`);
+  } else {
+    logger.info('No changes since last run');
+  }
+
+  // Set up file watching for future changes
+  await setupWatchSubscriptions(config, createChangeHandler());
 
   // Wire up config change handlers
   onConfigChange('sync_concurrency', () => {
@@ -408,10 +305,18 @@ export async function runWatchMode(options: SyncOptions): Promise<void> {
     const newConfig = getConfig();
     db.transaction((tx) => {
       cleanupOrphanedJobs(dryRun, tx);
-      cleanupOrphanedHashes(tx);
       cleanupOrphanedNodeMappings(tx);
+      cleanupOrphanedHashes(tx);
     });
-    await setupWatchSubscriptions(newConfig, createBatchHandler());
+
+    // Scan for changes in all sync dirs (including newly added ones)
+    logger.info('Checking for changes in sync directories...');
+    const totalChanges = await queryAllChanges(newConfig, createChangeHandler());
+    if (totalChanges > 0) {
+      logger.info(`Found ${totalChanges} changes to sync`);
+    }
+
+    await setupWatchSubscriptions(newConfig, createChangeHandler());
   });
 
   // Start the job processor loop
@@ -421,7 +326,7 @@ export async function runWatchMode(options: SyncOptions): Promise<void> {
   const handleReconcile = async (): Promise<void> => {
     logger.info('Reconcile signal received, starting full filesystem scan...');
     const currentConfig = getConfig();
-    await triggerFullReconciliation(currentConfig, createBatchHandler());
+    await triggerFullReconciliation(currentConfig, createChangeHandler());
   };
   registerSignalHandler('reconcile', handleReconcile);
 
