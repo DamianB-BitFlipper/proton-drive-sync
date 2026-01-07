@@ -1,0 +1,19 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    remove|purge)
+        # Attempt cleanup, ignore errors if binary already removed
+        if command -v proton-drive-sync &> /dev/null; then
+            proton-drive-sync service uninstall -y 2>/dev/null || true
+            proton-drive-sync auth --logout 2>/dev/null || true
+        fi
+        ;;
+esac
+
+# On purge, also remove user data
+if [ "$1" = "purge" ]; then
+    if command -v proton-drive-sync &> /dev/null; then
+        proton-drive-sync reset --purge -y 2>/dev/null || true
+    fi
+fi

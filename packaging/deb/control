@@ -1,0 +1,11 @@
+Package: proton-drive-sync
+Version: {{VERSION}}
+Section: utils
+Priority: optional
+Architecture: {{ARCH}}
+Depends: libsecret-1-0
+Maintainer: dbctl@pm.me
+Description: Sync local directories to Proton Drive cloud storage
+ A CLI tool that syncs local directories to Proton Drive using
+ the official Proton Drive SDK.
+Homepage: https://github.com/DamianB-BitFlipper/proton-drive-sync

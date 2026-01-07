@@ -156,3 +156,90 @@ jobs:
           repository: DamianB-BitFlipper/homebrew-tap
           event-type: update-formula
           client-payload: '{"version": "${{ github.event.release.tag_name }}"}'
+
+  build-linux-packages:
+    needs: upload-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
+
+      - name: Download Linux artifacts
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p artifacts
+          gh release download "v${VERSION}" -p "proton-drive-sync-linux-*.tar.gz" -D artifacts/
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Extract binaries
+        run: |
+          mkdir -p binaries/{amd64,arm64}
+          tar -xzf artifacts/proton-drive-sync-linux-x64.tar.gz -C binaries/amd64/
+          tar -xzf artifacts/proton-drive-sync-linux-arm64.tar.gz -C binaries/arm64/
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev rpm
+
+      - name: Build .deb packages
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          for ARCH in amd64 arm64; do
+            PKG_DIR="deb-${ARCH}"
+            mkdir -p "${PKG_DIR}/DEBIAN" "${PKG_DIR}/usr/bin"
+
+            cp binaries/${ARCH}/proton-drive-sync "${PKG_DIR}/usr/bin/"
+            chmod 755 "${PKG_DIR}/usr/bin/proton-drive-sync"
+
+            # Copy control file and substitute placeholders
+            sed -e "s/{{VERSION}}/${VERSION}/" \
+                -e "s/{{ARCH}}/${ARCH}/" \
+                packaging/deb/control > "${PKG_DIR}/DEBIAN/control"
+
+            cp packaging/deb/postrm "${PKG_DIR}/DEBIAN/"
+            chmod 755 "${PKG_DIR}/DEBIAN/postrm"
+
+            dpkg-deb --build "${PKG_DIR}" "proton-drive-sync_${VERSION}_${ARCH}.deb"
+          done
+
+      - name: Build .rpm packages
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          for ARCH_PAIR in "amd64:x86_64" "arm64:aarch64"; do
+            DEB_ARCH="${ARCH_PAIR%:*}"
+            RPM_ARCH="${ARCH_PAIR#*:}"
+
+            mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+            cp binaries/${DEB_ARCH}/proton-drive-sync rpmbuild/SOURCES/
+            cp packaging/rpm/proton-drive-sync.spec rpmbuild/SPECS/
+
+            rpmbuild --define "_topdir $(pwd)/rpmbuild" \
+                     --define "_version ${VERSION}" \
+                     --target "${RPM_ARCH}" \
+                     -bb rpmbuild/SPECS/proton-drive-sync.spec
+
+            cp rpmbuild/RPMS/${RPM_ARCH}/*.rpm ./
+            rm -rf rpmbuild
+          done
+
+      - name: Upload packages to release
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          gh release upload "v${VERSION}" \
+            proton-drive-sync_${VERSION}_amd64.deb \
+            proton-drive-sync_${VERSION}_arm64.deb \
+            proton-drive-sync-${VERSION}-1.x86_64.rpm \
+            proton-drive-sync-${VERSION}-1.aarch64.rpm
+        env:
+          GH_TOKEN: ${{ github.token }}

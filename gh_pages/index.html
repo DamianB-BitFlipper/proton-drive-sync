@@ -1,16 +1,118 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
-    <meta
-      http-equiv="refresh"
-      content="0; url=https://github.com/damianb-bitflipper/proton-drive-sync"
-    />
-    <title>Proton Drive Sync</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Proton Drive Sync - Installation</title>
+    <style>
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        max-width: 800px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.6;
+        color: #333;
+      }
+      h1 {
+        color: #6d4aff;
+      }
+      h2 {
+        margin-top: 2rem;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 0.5rem;
+      }
+      pre {
+        background: #f6f8fa;
+        padding: 1rem;
+        overflow-x: auto;
+        border-radius: 6px;
+        border: 1px solid #e1e4e8;
+      }
+      code {
+        font-family: 'SF Mono', Consolas, monospace;
+        font-size: 0.9em;
+      }
+      a {
+        color: #6d4aff;
+      }
+      .note {
+        background: #fff8e6;
+        border-left: 4px solid #f0b429;
+        padding: 0.75rem 1rem;
+        margin: 1rem 0;
+      }
+    </style>
   </head>
   <body>
+    <h1>Proton Drive Sync</h1>
+    <p>Sync local directories to Proton Drive cloud storage.</p>
+    <p><a href="https://github.com/DamianB-BitFlipper/proton-drive-sync">GitHub Repository</a></p>
+
+    <h2>macOS (Homebrew)</h2>
+    <pre><code>brew tap DamianB-BitFlipper/tap
+brew install proton-drive-sync
+proton-drive-sync setup</code></pre>
+
+    <h2>Debian / Ubuntu</h2>
     <p>
-      Redirecting to
-      <a href="https://github.com/damianb-bitflipper/proton-drive-sync">GitHub repository</a>...
+      Download the <code>.deb</code> package from
+      <a href="https://github.com/DamianB-BitFlipper/proton-drive-sync/releases/latest"
+        >GitHub Releases</a
+      >:
     </p>
+    <pre><code># Download the .deb for your architecture (amd64 or arm64)
+# Then install with:
+sudo apt install ./proton-drive-sync_*.deb
+
+# Run setup wizard
+proton-drive-sync setup</code></pre>
+
+    <h2>Fedora / RHEL / CentOS</h2>
+    <p>
+      Download the <code>.rpm</code> package from
+      <a href="https://github.com/DamianB-BitFlipper/proton-drive-sync/releases/latest"
+        >GitHub Releases</a
+      >:
+    </p>
+    <pre><code># Download the .rpm for your architecture (x86_64 or aarch64)
+# Then install with:
+sudo dnf install ./proton-drive-sync-*.rpm
+
+# Run setup wizard
+proton-drive-sync setup</code></pre>
+
+    <h2>Other Linux</h2>
+    <p>
+      Download the Linux tarball from
+      <a href="https://github.com/DamianB-BitFlipper/proton-drive-sync/releases/latest"
+        >GitHub Releases</a
+      >:
+    </p>
+    <pre><code># Extract and install manually
+tar -xzf proton-drive-sync-linux-x64.tar.gz
+sudo mv proton-drive-sync /usr/local/bin/
+
+# Run setup wizard
+proton-drive-sync setup</code></pre>
+
+    <h2>Windows</h2>
+    <p>
+      Download the <code>.zip</code> from
+      <a href="https://github.com/DamianB-BitFlipper/proton-drive-sync/releases/latest"
+        >GitHub Releases</a
+      >, extract, and add to your PATH.
+    </p>
+
+    <h2>Post-Installation</h2>
+    <p>After installing, run the setup wizard to authenticate and configure the service:</p>
+    <pre><code>proton-drive-sync setup</code></pre>
+
+    <div class="note">
+      <strong>Note:</strong> The setup wizard will guide you through Proton authentication and
+      optionally install a system service for automatic syncing.
+    </div>
   </body>
 </html>
