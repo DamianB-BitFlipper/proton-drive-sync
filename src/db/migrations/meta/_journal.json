@@ -55,14 +55,7 @@
       "idx": 7,
       "version": "6",
       "when": 1767830400000,
-      "tag": "0007_drop_clocks_table",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1767799339335,
-      "tag": "0008_curvy_glorian",
+      "tag": "0007_overlapping_sync_dirs",
       "breakpoints": true
     }
   ]
