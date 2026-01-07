@@ -148,3 +148,11 @@ jobs:
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
           generate_release_notes: true
+
+      - name: Trigger Homebrew tap update
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.TAP_UPDATE_TOKEN }}
+          repository: DamianB-BitFlipper/homebrew-tap
+          event-type: update-formula
+          client-payload: '{"version": "${{ github.event.release.tag_name }}"}'
