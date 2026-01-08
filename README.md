@@ -115,3 +115,11 @@ For package managers:
 ## Development
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for development setup and contributing guidelines.
+
+---
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/thebitflipper" target="_blank">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50">
+  </a>
+</p>
