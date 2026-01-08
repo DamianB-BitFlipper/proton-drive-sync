@@ -118,8 +118,6 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for development setup and contributing guid
 
 ---
 
-<p align="center">
-  <a href="https://www.buymeacoffee.com/thebitflipper" target="_blank">
-    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50">
-  </a>
-</p>
+<a href="https://www.buymeacoffee.com/thebitflipper" target="_blank">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50">
+</a>
