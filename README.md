@@ -44,6 +44,17 @@ sudo dnf install ./<downloaded.rpm>
 proton-drive-sync setup
 ```
 
+### Arch Linux (AUR)
+
+On Arch Linux and derivatives, install from the [AUR package](https://aur.archlinux.org/packages/proton-drive-sync-bin):
+
+```bash
+yay -S proton-drive-sync-bin
+# alternatively using paru
+paru -S proton-drive-sync-bin
+# or use your preferred AUR helper
+```
+
 <details>
 <summary>Other Linux</summary>
 
