@@ -8,20 +8,15 @@
  */
 
 import { select, confirm } from '@inquirer/prompts';
+import { existsSync } from 'fs';
+
 import { getStoredCredentials } from '../keychain.js';
 import { isAlreadyRunning } from '../flags.js';
 import { logger } from '../logger.js';
-import {
-  getConfig,
-  ensureConfigDir,
-  CONFIG_FILE,
-  DEFAULT_DASHBOARD_HOST,
-  DEFAULT_DASHBOARD_PORT,
-} from '../config.js';
-import type { Config } from '../config.js';
-import { writeFileSync, existsSync } from 'fs';
-import { chownToEffectiveUser, getEffectiveHome } from '../paths.js';
+import { getConfig, DEFAULT_DASHBOARD_PORT } from '../config.js';
+import { getEffectiveHome } from '../paths.js';
 import { authCommand } from './auth.js';
+import { dashboardHostCommand } from './config.js';
 import { serviceInstallCommand, isServiceInstalled, loadSyncService } from './service/index.js';
 import type { InstallScope } from './service/types.js';
 
@@ -30,7 +25,6 @@ import type { InstallScope } from './service/types.js';
 // ============================================================================
 
 const CYAN = '\x1b[36m';
-const YELLOW = '\x1b[33m';
 const RESET = '\x1b[0m';
 
 // ============================================================================
@@ -66,27 +60,6 @@ function showSection(title: string): void {
   console.log(`  ${title}`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-}
-
-function loadOrCreateConfig(): Config {
-  if (!existsSync(CONFIG_FILE)) {
-    ensureConfigDir();
-    const defaultConfig: Config = {
-      sync_dirs: [],
-      sync_concurrency: 4,
-    };
-    writeFileSync(CONFIG_FILE, JSON.stringify(defaultConfig, null, 2));
-    chownToEffectiveUser(CONFIG_FILE);
-    logger.info(`Created default config file: ${CONFIG_FILE}`);
-    return defaultConfig;
-  }
-  return getConfig();
-}
-
-function saveConfig(config: Config): void {
-  ensureConfigDir();
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-  chownToEffectiveUser(CONFIG_FILE);
 }
 
 function getInstalledServiceScope(): InstallScope | null {
@@ -142,36 +115,10 @@ function getLocalIp(): string {
 // Setup Steps
 // ============================================================================
 
-async function configureDashboard(config: Config): Promise<Config> {
+async function configureDashboard(): Promise<void> {
   showSection('Remote Dashboard Access');
-
-  console.log('  The dashboard is available at localhost:4242 by default.');
-  console.log('');
-  console.log('  For headless/server installs, you can enable remote access by binding');
-  console.log('  the web interface to all network interfaces (0.0.0.0:4242).');
-  console.log('');
-  console.log(`  ${YELLOW}WARNING: This exposes the dashboard to your network.${RESET}`);
-  console.log('  The dashboard allows service control and configuration changes.');
-  console.log('  Only enable this on trusted networks or behind a firewall.');
-  console.log('');
-
-  const currentlyRemote = config.dashboard_host === '0.0.0.0';
-
-  const enableRemote = await confirm({
-    message: 'Enable remote dashboard access?',
-    default: currentlyRemote,
-  });
-
-  config.dashboard_host = enableRemote ? '0.0.0.0' : DEFAULT_DASHBOARD_HOST;
-  saveConfig(config);
-
-  if (enableRemote) {
-    logger.info('Remote dashboard access enabled (0.0.0.0:4242)');
-  } else {
-    logger.info('Dashboard will only be accessible locally (localhost:4242)');
-  }
-
-  return config;
+  // Use the interactive config command
+  await dashboardHostCommand();
 }
 
 async function configureService(): Promise<boolean> {
@@ -305,7 +252,7 @@ async function configureAuth(): Promise<void> {
   await authCommand({});
 }
 
-async function waitForServiceAndOpenDashboard(config: Config): Promise<void> {
+async function waitForServiceAndOpenDashboard(): Promise<void> {
   showSection('Starting Service');
 
   logger.info('Waiting for service to start...');
@@ -319,8 +266,9 @@ async function waitForServiceAndOpenDashboard(config: Config): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
+  const config = getConfig();
   const port = config.dashboard_port ?? DEFAULT_DASHBOARD_PORT;
-  const dashboardHost = config.dashboard_host ?? DEFAULT_DASHBOARD_HOST;
+  const dashboardHost = config.dashboard_host ?? '127.0.0.1';
 
   if (running) {
     logger.info('Service started successfully!');
@@ -354,11 +302,8 @@ async function waitForServiceAndOpenDashboard(config: Config): Promise<void> {
 export async function setupCommand(): Promise<void> {
   showBanner();
 
-  // Load or create config
-  let config = loadOrCreateConfig();
-
-  // Step 1: Dashboard configuration
-  config = await configureDashboard(config);
+  // Step 1: Dashboard configuration (uses interactive config command)
+  await configureDashboard();
 
   // Step 2: Service installation
   const serviceInstalled = await configureService();
@@ -368,7 +313,7 @@ export async function setupCommand(): Promise<void> {
 
   // Step 4: Wait for service and show dashboard URL
   if (serviceInstalled || (await isAlreadyRunning())) {
-    await waitForServiceAndOpenDashboard(config);
+    await waitForServiceAndOpenDashboard();
   } else {
     showSection('Setup Complete');
     console.log('  To start syncing, run:');
@@ -377,6 +322,7 @@ export async function setupCommand(): Promise<void> {
     console.log('');
     console.log('  Then visit the dashboard to configure sync directories:');
     console.log('');
+    const config = getConfig();
     const port = config.dashboard_port ?? DEFAULT_DASHBOARD_PORT;
     console.log(`    http://localhost:${port}`);
     console.log('');

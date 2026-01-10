@@ -4,7 +4,15 @@
 
 import { program } from 'commander';
 import { authCommand } from './cli/auth.js';
-import { configCommand, excludeCommand } from './cli/config.js';
+import {
+  configCommand,
+  getCommand,
+  dashboardHostCommand,
+  dashboardPortCommand,
+  concurrencyCommand,
+  syncDirCommand,
+  excludeCommand,
+} from './cli/config.js';
 import { enableDebug } from './logger.js';
 import { logsCommand, logsClearCommand } from './cli/logs.js';
 import { pauseCommand } from './cli/pause.js';
@@ -51,9 +59,38 @@ program
 
 const configCmd = program
   .command('config')
-  .description('Open settings dashboard or set config values')
-  .option('--set <key=value...>', 'Set config values directly (e.g., --set dashboard_host=0.0.0.0)')
+  .description('Manage configuration settings')
   .action(configCommand);
+
+configCmd
+  .command('get [key]')
+  .description('Show config values')
+  .option('--json', 'Output as JSON')
+  .action(getCommand);
+
+configCmd
+  .command('dashboard-host [value]')
+  .description('Set dashboard host (interactive if no value)')
+  .action(dashboardHostCommand);
+
+configCmd
+  .command('dashboard-port [value]')
+  .description('Set dashboard port (interactive if no value)')
+  .action(dashboardPortCommand);
+
+configCmd
+  .command('concurrency [value]')
+  .description('Set sync concurrency (interactive if no value)')
+  .action(concurrencyCommand);
+
+configCmd
+  .command('sync-dir')
+  .description('Manage sync directories')
+  .option('--list', 'List sync directories')
+  .option('--add <path>', 'Add sync directory')
+  .option('--remote <remote>', 'Remote root for --add (default: /)')
+  .option('--remove <path>', 'Remove sync directory')
+  .action(syncDirCommand);
 
 configCmd
   .command('exclude')

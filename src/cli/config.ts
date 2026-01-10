@@ -1,9 +1,9 @@
 /**
- * Config Command - Open dashboard settings page or set config values
+ * Config Command - Manage configuration via subcommands
  */
 
-import { Command } from 'commander';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { select, confirm, input } from '@inquirer/prompts';
 
 import {
   CONFIG_FILE,
@@ -11,97 +11,447 @@ import {
   getConfig,
   DEFAULT_DASHBOARD_HOST,
   DEFAULT_DASHBOARD_PORT,
+  DEFAULT_SYNC_CONCURRENCY,
 } from '../config.js';
-import type { ExcludePattern } from '../config.js';
-import { isAlreadyRunning } from '../flags.js';
-import { logger } from '../logger.js';
+import type { Config, ExcludePattern, SyncDir } from '../config.js';
 import { chownToEffectiveUser } from '../paths.js';
-import { startDashboard } from '../dashboard/server.js';
 import { validateGlob, clearRegexCache } from '../sync/exclusions.js';
 
-// Valid config keys that can be set via CLI
-const SETTABLE_KEYS = ['dashboard_host', 'dashboard_port', 'sync_concurrency'];
+// ============================================================================
+// Base Config Command
+// ============================================================================
 
-interface ConfigOptions {
-  set?: string[];
+/**
+ * Base config command - interactive menu to configure settings
+ */
+export async function configCommand(): Promise<void> {
+  while (true) {
+    console.log('');
+    const action = await select({
+      message: 'What would you like to configure?',
+      choices: [
+        { name: 'View current config', value: 'get' },
+        { name: 'Dashboard host', value: 'dashboard-host' },
+        { name: 'Dashboard port', value: 'dashboard-port' },
+        { name: 'Sync concurrency', value: 'concurrency' },
+        { name: 'Sync directories', value: 'sync-dir' },
+        { name: 'Exclusion patterns', value: 'exclude' },
+        { name: 'Done', value: 'done' },
+      ],
+    });
+
+    if (action === 'done') {
+      break;
+    }
+
+    switch (action) {
+      case 'get':
+        getCommand(undefined, {});
+        break;
+      case 'dashboard-host':
+        await dashboardHostCommand();
+        break;
+      case 'dashboard-port':
+        await dashboardPortCommand();
+        break;
+      case 'concurrency':
+        await concurrencyCommand();
+        break;
+      case 'sync-dir':
+        await syncDirCommand({});
+        break;
+      case 'exclude':
+        await excludeCommand({});
+        break;
+    }
+  }
 }
 
-export function configCommand(this: Command, options: ConfigOptions): void {
-  // If --set provided, update config and exit
-  if (options.set && options.set.length > 0) {
-    setConfigValues(options.set);
-    return;
+// ============================================================================
+// Config File Helpers
+// ============================================================================
+
+/**
+ * Load config file as raw JSON to preserve unknown fields
+ */
+function loadConfigRaw(): Record<string, unknown> {
+  if (!existsSync(CONFIG_FILE)) {
+    return {};
   }
-
-  // Otherwise, open settings dashboard (existing behavior)
-  const config = getConfig();
-  const host = config.dashboard_host ?? DEFAULT_DASHBOARD_HOST;
-  const port = config.dashboard_port ?? DEFAULT_DASHBOARD_PORT;
-  const displayHost = host === '0.0.0.0' ? 'localhost' : host;
-  const settingsUrl = `http://${displayHost}:${port}/controls`;
-
-  if (isAlreadyRunning()) {
-    logger.info(`Dashboard is already running. Open settings at:\n\n  ${settingsUrl}\n`);
-    return;
-  }
-
-  // Start just the dashboard (not the sync client)
-  startDashboard(config);
-  logger.info(`Dashboard started. Open settings at:\n\n  ${settingsUrl}\n`);
-
-  // Keep process alive
-  process.on('SIGINT', () => {
-    logger.info('Stopping dashboard...');
-    process.exit(0);
-  });
+  const content = readFileSync(CONFIG_FILE, 'utf-8');
+  return JSON.parse(content);
 }
 
-function setConfigValues(pairs: string[]): void {
-  // Ensure config directory exists before writing
+/**
+ * Save config file
+ */
+function saveConfigRaw(config: Record<string, unknown>): void {
   ensureConfigDir();
-
-  // Load existing config file (raw JSON to preserve unknown fields)
-  let configData: Record<string, unknown> = {};
-  if (existsSync(CONFIG_FILE)) {
-    const content = readFileSync(CONFIG_FILE, 'utf-8');
-    configData = JSON.parse(content);
-  }
-
-  for (const pair of pairs) {
-    const eqIndex = pair.indexOf('=');
-    if (eqIndex === -1) {
-      logger.error(`Invalid format: ${pair}. Use key=value`);
-      process.exit(1);
-    }
-
-    const key = pair.substring(0, eqIndex);
-    const value = pair.substring(eqIndex + 1);
-
-    if (!SETTABLE_KEYS.includes(key)) {
-      logger.error(`Unknown config key: ${key}`);
-      logger.info(`Valid keys: ${SETTABLE_KEYS.join(', ')}`);
-      process.exit(1);
-    }
-
-    // Parse value (number for port/concurrency, string otherwise)
-    if (key === 'dashboard_port' || key === 'sync_concurrency') {
-      const numValue = parseInt(value, 10);
-      if (isNaN(numValue)) {
-        logger.error(`${key} must be a number`);
-        process.exit(1);
-      }
-      configData[key] = numValue;
-    } else {
-      configData[key] = value;
-    }
-
-    logger.info(`Set ${key} = ${value}`);
-  }
-
-  // Write updated config
-  writeFileSync(CONFIG_FILE, JSON.stringify(configData, null, 2));
+  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
   chownToEffectiveUser(CONFIG_FILE);
-  logger.info(`Config saved to ${CONFIG_FILE}`);
+}
+
+// ============================================================================
+// Get Subcommand
+// ============================================================================
+
+interface GetOptions {
+  json?: boolean;
+}
+
+/**
+ * Get config values
+ */
+export function getCommand(key: string | undefined, options: GetOptions): void {
+  const config = getConfig();
+
+  if (options.json) {
+    if (key) {
+      const value = config[key as keyof Config];
+      console.log(JSON.stringify(value, null, 2));
+    } else {
+      console.log(JSON.stringify(config, null, 2));
+    }
+    return;
+  }
+
+  // Human-readable output
+  if (key) {
+    const value = config[key as keyof Config];
+    if (value === undefined) {
+      console.log(`${key}: (not set)`);
+    } else if (typeof value === 'object') {
+      console.log(`${key}:`);
+      console.log(JSON.stringify(value, null, 2));
+    } else {
+      console.log(`${key}: ${value}`);
+    }
+  } else {
+    // Show all config
+    console.log('Current configuration:\n');
+    console.log(`  dashboard_host: ${config.dashboard_host ?? DEFAULT_DASHBOARD_HOST}`);
+    console.log(`  dashboard_port: ${config.dashboard_port ?? DEFAULT_DASHBOARD_PORT}`);
+    console.log(`  sync_concurrency: ${config.sync_concurrency ?? DEFAULT_SYNC_CONCURRENCY}`);
+
+    if (config.sync_dirs && config.sync_dirs.length > 0) {
+      console.log('\n  sync_dirs:');
+      for (const dir of config.sync_dirs) {
+        console.log(`    - ${dir.source_path} -> ${dir.remote_root}`);
+      }
+    } else {
+      console.log('\n  sync_dirs: (none configured)');
+    }
+
+    if (config.exclude_patterns && config.exclude_patterns.length > 0) {
+      console.log('\n  exclude_patterns:');
+      for (const entry of config.exclude_patterns) {
+        const pathLabel = entry.path === '/' ? '/ (global)' : entry.path;
+        console.log(`    ${pathLabel}: ${entry.globs.join(', ')}`);
+      }
+    } else {
+      console.log('\n  exclude_patterns: (none configured)');
+    }
+
+    console.log(`\nConfig file: ${CONFIG_FILE}`);
+  }
+}
+
+// ============================================================================
+// Dashboard Host Subcommand
+// ============================================================================
+
+/**
+ * Set dashboard host (interactive if no value provided)
+ */
+export async function dashboardHostCommand(value?: string): Promise<void> {
+  if (value !== undefined) {
+    // Non-interactive mode
+    const config = loadConfigRaw();
+    config.dashboard_host = value;
+    saveConfigRaw(config);
+    console.log(`Set dashboard_host = ${value}`);
+    return;
+  }
+
+  // Interactive mode
+  console.log('');
+  console.log('  The dashboard is available at localhost:4242 by default.');
+  console.log('');
+  console.log('  For headless/server installs, you can enable remote access by binding');
+  console.log('  the web interface to all network interfaces (0.0.0.0:4242).');
+  console.log('');
+  console.log('  \x1b[33mWARNING: This exposes the dashboard to your network.\x1b[0m');
+  console.log('  The dashboard allows service control and configuration changes.');
+  console.log('  Only enable this on trusted networks or behind a firewall.');
+  console.log('');
+
+  const config = loadConfigRaw();
+  const currentlyRemote = config.dashboard_host === '0.0.0.0';
+
+  const enableRemote = await confirm({
+    message: 'Enable remote dashboard access?',
+    default: currentlyRemote,
+  });
+
+  const newHost = enableRemote ? '0.0.0.0' : DEFAULT_DASHBOARD_HOST;
+  config.dashboard_host = newHost;
+  saveConfigRaw(config);
+
+  if (enableRemote) {
+    console.log('Remote dashboard access enabled (0.0.0.0:4242)');
+  } else {
+    console.log('Dashboard will only be accessible locally (localhost:4242)');
+  }
+}
+
+// ============================================================================
+// Dashboard Port Subcommand
+// ============================================================================
+
+/**
+ * Set dashboard port (interactive if no value provided)
+ */
+export async function dashboardPortCommand(value?: string): Promise<void> {
+  if (value !== undefined) {
+    // Non-interactive mode
+    const port = parseInt(value, 10);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      console.error('Invalid port number. Must be between 1 and 65535.');
+      process.exit(1);
+    }
+    const config = loadConfigRaw();
+    config.dashboard_port = port;
+    saveConfigRaw(config);
+    console.log(`Set dashboard_port = ${port}`);
+    return;
+  }
+
+  // Interactive mode
+  const config = loadConfigRaw();
+  const currentPort = (config.dashboard_port as number) ?? DEFAULT_DASHBOARD_PORT;
+
+  const portStr = await input({
+    message: 'Dashboard port:',
+    default: String(currentPort),
+    validate: (val) => {
+      const num = parseInt(val, 10);
+      if (isNaN(num) || num < 1 || num > 65535) {
+        return 'Must be a valid port number (1-65535)';
+      }
+      return true;
+    },
+  });
+
+  const port = parseInt(portStr, 10);
+  config.dashboard_port = port;
+  saveConfigRaw(config);
+  console.log(`Set dashboard_port = ${port}`);
+}
+
+// ============================================================================
+// Concurrency Subcommand
+// ============================================================================
+
+/**
+ * Set sync concurrency (interactive if no value provided)
+ */
+export async function concurrencyCommand(value?: string): Promise<void> {
+  if (value !== undefined) {
+    // Non-interactive mode
+    const num = parseInt(value, 10);
+    if (isNaN(num) || num < 1) {
+      console.error('Invalid concurrency value. Must be a positive integer.');
+      process.exit(1);
+    }
+    const config = loadConfigRaw();
+    config.sync_concurrency = num;
+    saveConfigRaw(config);
+    console.log(`Set sync_concurrency = ${num}`);
+    return;
+  }
+
+  // Interactive mode
+  const config = loadConfigRaw();
+  const current = (config.sync_concurrency as number) ?? DEFAULT_SYNC_CONCURRENCY;
+
+  const numStr = await input({
+    message: 'Sync concurrency (parallel uploads):',
+    default: String(current),
+    validate: (val) => {
+      const num = parseInt(val, 10);
+      if (isNaN(num) || num < 1) {
+        return 'Must be a positive integer';
+      }
+      return true;
+    },
+  });
+
+  const num = parseInt(numStr, 10);
+  config.sync_concurrency = num;
+  saveConfigRaw(config);
+  console.log(`Set sync_concurrency = ${num}`);
+}
+
+// ============================================================================
+// Sync Dir Subcommand
+// ============================================================================
+
+interface SyncDirOptions {
+  list?: boolean;
+  add?: string;
+  remote?: string;
+  remove?: string;
+}
+
+/**
+ * Manage sync directories
+ */
+export async function syncDirCommand(options: SyncDirOptions): Promise<void> {
+  // Non-interactive: --list
+  if (options.list) {
+    listSyncDirs();
+    return;
+  }
+
+  // Non-interactive: --add
+  if (options.add) {
+    addSyncDir(options.add, options.remote ?? '/');
+    return;
+  }
+
+  // Non-interactive: --remove
+  if (options.remove) {
+    removeSyncDir(options.remove);
+    return;
+  }
+
+  // Interactive mode
+  await syncDirInteractive();
+}
+
+function listSyncDirs(): void {
+  const config = getConfig();
+
+  if (!config.sync_dirs || config.sync_dirs.length === 0) {
+    console.log('No sync directories configured.');
+    console.log('\nAdd one with: proton-drive-sync config sync-dir --add <path>');
+    return;
+  }
+
+  console.log('Sync directories:\n');
+  for (const dir of config.sync_dirs) {
+    console.log(`  ${dir.source_path} -> ${dir.remote_root}`);
+  }
+}
+
+function addSyncDir(sourcePath: string, remoteRoot: string): void {
+  // Validate source path exists
+  if (!existsSync(sourcePath)) {
+    console.error(`Directory does not exist: ${sourcePath}`);
+    process.exit(1);
+  }
+
+  // Ensure remote root starts with /
+  if (!remoteRoot.startsWith('/')) {
+    remoteRoot = '/' + remoteRoot;
+  }
+
+  const config = loadConfigRaw();
+  const syncDirs = (config.sync_dirs as SyncDir[]) ?? [];
+
+  // Check for duplicates
+  if (syncDirs.some((d) => d.source_path === sourcePath)) {
+    console.log(`Sync directory already exists: ${sourcePath}`);
+    return;
+  }
+
+  syncDirs.push({ source_path: sourcePath, remote_root: remoteRoot });
+  config.sync_dirs = syncDirs;
+  saveConfigRaw(config);
+  console.log(`Added sync directory: ${sourcePath} -> ${remoteRoot}`);
+}
+
+function removeSyncDir(sourcePath: string): void {
+  const config = loadConfigRaw();
+  const syncDirs = (config.sync_dirs as SyncDir[]) ?? [];
+
+  const index = syncDirs.findIndex((d) => d.source_path === sourcePath);
+  if (index === -1) {
+    console.log(`Sync directory not found: ${sourcePath}`);
+    return;
+  }
+
+  syncDirs.splice(index, 1);
+  config.sync_dirs = syncDirs;
+  saveConfigRaw(config);
+  console.log(`Removed sync directory: ${sourcePath}`);
+}
+
+async function syncDirInteractive(): Promise<void> {
+  while (true) {
+    const config = loadConfigRaw();
+    const syncDirs = (config.sync_dirs as SyncDir[]) ?? [];
+
+    console.log('');
+    if (syncDirs.length === 0) {
+      console.log('No sync directories configured.');
+    } else {
+      console.log('Current sync directories:');
+      for (const dir of syncDirs) {
+        console.log(`  ${dir.source_path} -> ${dir.remote_root}`);
+      }
+    }
+    console.log('');
+
+    const action = await select({
+      message: 'What would you like to do?',
+      choices: [
+        { name: 'Add new sync directory', value: 'add' },
+        ...(syncDirs.length > 0 ? [{ name: 'Remove sync directory', value: 'remove' }] : []),
+        { name: 'Done', value: 'done' },
+      ],
+    });
+
+    if (action === 'done') {
+      break;
+    }
+
+    if (action === 'add') {
+      const sourcePath = await input({
+        message: 'Local directory path:',
+        validate: (val) => {
+          if (!val.trim()) {
+            return 'Path is required';
+          }
+          if (!existsSync(val)) {
+            return 'Directory does not exist';
+          }
+          return true;
+        },
+      });
+
+      const remoteRoot = await input({
+        message: 'Remote root path:',
+        default: '/',
+      });
+
+      addSyncDir(sourcePath, remoteRoot);
+    }
+
+    if (action === 'remove') {
+      const choices = syncDirs.map((d) => ({
+        name: `${d.source_path} -> ${d.remote_root}`,
+        value: d.source_path,
+      }));
+
+      const toRemove = await select({
+        message: 'Select directory to remove:',
+        choices,
+      });
+
+      removeSyncDir(toRemove);
+    }
+  }
 }
 
 // ============================================================================
@@ -118,7 +468,7 @@ interface ExcludeOptions {
 /**
  * Exclude subcommand handler - manage file exclusion patterns
  */
-export function excludeCommand(options: ExcludeOptions): void {
+export async function excludeCommand(options: ExcludeOptions): Promise<void> {
   const targetPath = options.path ?? '/';
 
   // Handle --list
@@ -139,30 +489,89 @@ export function excludeCommand(options: ExcludeOptions): void {
     return;
   }
 
-  // No action specified, show current exclusions
-  listExclusions(targetPath);
+  // No action specified, enter interactive mode
+  await excludeInteractive();
 }
 
 /**
- * Load config file as raw JSON to preserve unknown fields
+ * Interactive mode for managing exclusion patterns
  */
-function loadConfigRaw(): Record<string, unknown> {
-  if (!existsSync(CONFIG_FILE)) {
-    return {};
+async function excludeInteractive(): Promise<void> {
+  while (true) {
+    const config = loadConfigRaw();
+    const patterns = getExcludePatternsFromRaw(config);
+
+    console.log('');
+    if (patterns.length === 0) {
+      console.log('No exclusion patterns configured.');
+    } else {
+      console.log('Current exclusion patterns:');
+      for (const entry of patterns) {
+        const pathLabel = entry.path === '/' ? '/ (global - all sync dirs)' : entry.path;
+        console.log(`  ${pathLabel}`);
+        for (const glob of entry.globs) {
+          console.log(`    - ${glob}`);
+        }
+      }
+    }
+    console.log('');
+
+    // Build choices - only show remove if there are patterns
+    const hasPatterns = patterns.some((p) => p.globs.length > 0);
+    const action = await select({
+      message: 'What would you like to do?',
+      choices: [
+        { name: 'Add exclusion pattern', value: 'add' },
+        ...(hasPatterns ? [{ name: 'Remove exclusion pattern', value: 'remove' }] : []),
+        { name: 'Done', value: 'done' },
+      ],
+    });
+
+    if (action === 'done') {
+      break;
+    }
+
+    if (action === 'add') {
+      const path = await input({
+        message: 'Path (/ for global, or specific path):',
+        default: '/',
+      });
+
+      const pattern = await input({
+        message: 'Glob pattern to exclude (e.g., node_modules, *.log):',
+        validate: (val) => {
+          if (!val.trim()) {
+            return 'Pattern is required';
+          }
+          const result = validateGlob(val);
+          return result.valid ? true : result.error!;
+        },
+      });
+
+      addExclusions(path, [pattern]);
+    }
+
+    if (action === 'remove') {
+      // Build a flat list of all patterns with their paths
+      const choices: { name: string; value: { path: string; glob: string } }[] = [];
+      for (const entry of patterns) {
+        const pathLabel = entry.path === '/' ? '(global)' : entry.path;
+        for (const glob of entry.globs) {
+          choices.push({
+            name: `${glob} ${pathLabel}`,
+            value: { path: entry.path, glob },
+          });
+        }
+      }
+
+      const toRemove = await select({
+        message: 'Select pattern to remove:',
+        choices,
+      });
+
+      removeExclusions(toRemove.path, [toRemove.glob]);
+    }
   }
-  const content = readFileSync(CONFIG_FILE, 'utf-8');
-  return JSON.parse(content);
-}
-
-/**
- * Save config file
- */
-function saveConfigRaw(config: Record<string, unknown>): void {
-  ensureConfigDir();
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-  chownToEffectiveUser(CONFIG_FILE);
-  // Clear regex cache since patterns changed
-  clearRegexCache();
 }
 
 /**
@@ -197,30 +606,30 @@ function listExclusions(targetPath: string): void {
   if (targetPath === '/') {
     // List all exclusions
     if (patterns.length === 0) {
-      logger.info('No exclusion patterns configured.');
-      logger.info('\nAdd patterns with: proton-drive-sync config exclude --add <pattern>');
+      console.log('No exclusion patterns configured.');
+      console.log('\nAdd patterns with: proton-drive-sync config exclude --add <pattern>');
       return;
     }
 
-    logger.info('Exclusion patterns:\n');
+    console.log('Exclusion patterns:\n');
     for (const entry of patterns) {
       const pathLabel = entry.path === '/' ? '/ (global - all sync dirs)' : entry.path;
-      logger.info(`  ${pathLabel}`);
+      console.log(`  ${pathLabel}`);
       for (const glob of entry.globs) {
-        logger.info(`    - ${glob}`);
+        console.log(`    - ${glob}`);
       }
     }
   } else {
     // List exclusions for specific path
     const entry = patterns.find((p) => p.path === targetPath);
     if (!entry || entry.globs.length === 0) {
-      logger.info(`No exclusion patterns for path: ${targetPath}`);
+      console.log(`No exclusion patterns for path: ${targetPath}`);
       return;
     }
 
-    logger.info(`Exclusion patterns for ${targetPath}:\n`);
+    console.log(`Exclusion patterns for ${targetPath}:\n`);
     for (const glob of entry.globs) {
-      logger.info(`  - ${glob}`);
+      console.log(`  - ${glob}`);
     }
   }
 }
@@ -233,7 +642,7 @@ function addExclusions(targetPath: string, globs: string[]): void {
   for (const glob of globs) {
     const result = validateGlob(glob);
     if (!result.valid) {
-      logger.error(`Invalid pattern "${glob}": ${result.error}`);
+      console.error(`Invalid pattern "${glob}": ${result.error}`);
       process.exit(1);
     }
   }
@@ -248,20 +657,21 @@ function addExclusions(targetPath: string, globs: string[]): void {
     if (!entry.globs.includes(glob)) {
       entry.globs.push(glob);
       addedCount++;
-      logger.info(`Added exclusion pattern: ${glob}`);
+      console.log(`Added exclusion pattern: ${glob}`);
     }
   }
 
   if (addedCount === 0) {
-    logger.info('All patterns already exist.');
+    console.log('All patterns already exist.');
     return;
   }
 
   config.exclude_patterns = patterns;
   saveConfigRaw(config);
+  clearRegexCache();
 
   const pathLabel = targetPath === '/' ? 'global' : targetPath;
-  logger.info(`\nSaved ${addedCount} pattern(s) to ${pathLabel} exclusions.`);
+  console.log(`\nSaved ${addedCount} pattern(s) to ${pathLabel} exclusions.`);
 }
 
 /**
@@ -273,7 +683,7 @@ function removeExclusions(targetPath: string, globs: string[]): void {
   const entry = patterns.find((p) => p.path === targetPath);
 
   if (!entry) {
-    logger.info(`No exclusions found for path: ${targetPath}`);
+    console.log(`No exclusions found for path: ${targetPath}`);
     return;
   }
 
@@ -283,12 +693,12 @@ function removeExclusions(targetPath: string, globs: string[]): void {
     if (index !== -1) {
       entry.globs.splice(index, 1);
       removedCount++;
-      logger.info(`Removed exclusion pattern: ${glob}`);
+      console.log(`Removed exclusion pattern: ${glob}`);
     }
   }
 
   if (removedCount === 0) {
-    logger.info('No matching patterns found to remove.');
+    console.log('No matching patterns found to remove.');
     return;
   }
 
@@ -300,7 +710,8 @@ function removeExclusions(targetPath: string, globs: string[]): void {
 
   config.exclude_patterns = patterns.length > 0 ? patterns : undefined;
   saveConfigRaw(config);
+  clearRegexCache();
 
   const pathLabel = targetPath === '/' ? 'global' : targetPath;
-  logger.info(`\nRemoved ${removedCount} pattern(s) from ${pathLabel} exclusions.`);
+  console.log(`\nRemoved ${removedCount} pattern(s) from ${pathLabel} exclusions.`);
 }
