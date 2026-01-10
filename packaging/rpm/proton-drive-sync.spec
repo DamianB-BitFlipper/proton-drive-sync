@@ -3,13 +3,15 @@
 %global __os_install_post %{nil}
 %global __arch_install_post %{nil}
 
-Name:           proton-drive-sync
+Name:           %{_name}
 Version:        %{_version}
 Release:        %{_release}
 Summary:        Sync local directories to Proton Drive cloud storage
 License:        GPL-3.0
 URL:            https://github.com/DamianB-BitFlipper/proton-drive-sync
 Requires:       libsecret
+Conflicts:      proton-drive-sync, proton-drive-sync-prerelease
+Provides:       proton-drive-sync-cli
 
 %description
 A CLI tool that syncs local directories to Proton Drive using

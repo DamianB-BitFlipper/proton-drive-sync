@@ -6,8 +6,11 @@
 #   BINARY_PATH - Path to the binary to package
 #   GPG_PASSPHRASE - Passphrase for GPG signing
 #
+# Optional environment variables:
+#   PACKAGE_NAME - Package name (default: "proton-drive-sync")
+#
 # Outputs:
-#   proton-drive-sync-*.${ARCH}.rpm in current directory
+#   ${PACKAGE_NAME}-*.${ARCH}.rpm in current directory
 
 set -euo pipefail
 
@@ -19,6 +22,7 @@ for var in VERSION ARCH BINARY_PATH GPG_PASSPHRASE; do
 	fi
 done
 
+PACKAGE_NAME="${PACKAGE_NAME:-proton-drive-sync}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGING_DIR="$(dirname "${SCRIPT_DIR}")"
 
@@ -32,7 +36,7 @@ else
 	RPM_RELEASE="1"
 fi
 
-echo "Building .rpm package: proton-drive-sync-${RPM_VERSION}-${RPM_RELEASE}.${ARCH}.rpm"
+echo "Building .rpm package: ${PACKAGE_NAME}-${RPM_VERSION}-${RPM_RELEASE}.${ARCH}.rpm"
 
 # Create rpmbuild directory structure
 mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
@@ -43,6 +47,7 @@ cp "${PACKAGING_DIR}/rpm/proton-drive-sync.spec" rpmbuild/SPECS/
 
 # Build the package
 rpmbuild --define "_topdir $(pwd)/rpmbuild" \
+	--define "_name ${PACKAGE_NAME}" \
 	--define "_version ${RPM_VERSION}" \
 	--define "_release ${RPM_RELEASE}" \
 	--target "${ARCH}" \

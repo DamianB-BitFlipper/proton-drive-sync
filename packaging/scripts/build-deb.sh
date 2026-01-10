@@ -6,8 +6,11 @@
 #   BINARY_PATH - Path to the binary to package
 #   GPG_PASSPHRASE - Passphrase for GPG signing
 #
+# Optional environment variables:
+#   PACKAGE_NAME - Package name (default: "proton-drive-sync")
+#
 # Outputs:
-#   proton-drive-sync_${VERSION}_${ARCH}.deb in current directory
+#   ${PACKAGE_NAME}_${VERSION}_${ARCH}.deb in current directory
 
 set -euo pipefail
 
@@ -19,10 +22,11 @@ for var in VERSION ARCH BINARY_PATH GPG_PASSPHRASE; do
 	fi
 done
 
+PACKAGE_NAME="${PACKAGE_NAME:-proton-drive-sync}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGING_DIR="$(dirname "${SCRIPT_DIR}")"
 PKG_DIR="deb-${ARCH}"
-DEB_FILE="proton-drive-sync_${VERSION}_${ARCH}.deb"
+DEB_FILE="${PACKAGE_NAME}_${VERSION}_${ARCH}.deb"
 
 echo "Building .deb package: ${DEB_FILE}"
 
@@ -36,6 +40,7 @@ chmod 755 "${PKG_DIR}/usr/bin/proton-drive-sync"
 # Generate control file from template
 sed -e "s/{{VERSION}}/${VERSION}/" \
 	-e "s/{{ARCH}}/${ARCH}/" \
+	-e "s/{{PACKAGE_NAME}}/${PACKAGE_NAME}/" \
 	"${PACKAGING_DIR}/deb/control" >"${PKG_DIR}/DEBIAN/control"
 
 # Copy maintainer scripts

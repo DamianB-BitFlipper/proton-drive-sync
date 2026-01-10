@@ -75,11 +75,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Get version
+      - name: Get version and package name
         id: version
         run: |
           VERSION="${{ github.event.release.tag_name }}"
           echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
+
+          if [ "${{ github.event.release.prerelease }}" = "true" ]; then
+            echo "package_name=proton-drive-sync-prerelease" >> $GITHUB_OUTPUT
+          else
+            echo "package_name=proton-drive-sync" >> $GITHUB_OUTPUT
+          fi
 
       - name: Download Linux x64 artifact
         run: |
@@ -111,6 +117,7 @@ jobs:
           ARCH: amd64
           BINARY_PATH: binaries/proton-drive-sync
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
 
       - name: Build and sign .rpm package
         run: ./packaging/scripts/build-rpm.sh
@@ -119,13 +126,14 @@ jobs:
           ARCH: x86_64
           BINARY_PATH: binaries/proton-drive-sync
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
 
       - name: Upload packages to release
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           gh release upload "v${VERSION}" \
-            proton-drive-sync_${VERSION}_amd64.deb \
-            proton-drive-sync-*.x86_64.rpm
+            ${{ steps.version.outputs.package_name }}_${VERSION}_amd64.deb \
+            ${{ steps.version.outputs.package_name }}-*.x86_64.rpm
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -137,11 +145,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Get version
+      - name: Get version and package name
         id: version
         run: |
           VERSION="${{ github.event.release.tag_name }}"
           echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
+
+          if [ "${{ github.event.release.prerelease }}" = "true" ]; then
+            echo "package_name=proton-drive-sync-prerelease" >> $GITHUB_OUTPUT
+          else
+            echo "package_name=proton-drive-sync" >> $GITHUB_OUTPUT
+          fi
 
       - name: Download Linux arm64 artifact
         run: |
@@ -173,6 +187,7 @@ jobs:
           ARCH: arm64
           BINARY_PATH: binaries/proton-drive-sync
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
 
       - name: Build and sign .rpm package
         run: ./packaging/scripts/build-rpm.sh
@@ -181,20 +196,20 @@ jobs:
           ARCH: aarch64
           BINARY_PATH: binaries/proton-drive-sync
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
 
       - name: Upload packages to release
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           gh release upload "v${VERSION}" \
-            proton-drive-sync_${VERSION}_arm64.deb \
-            proton-drive-sync-*.aarch64.rpm
+            ${{ steps.version.outputs.package_name }}_${VERSION}_arm64.deb \
+            ${{ steps.version.outputs.package_name }}-*.aarch64.rpm
         env:
           GH_TOKEN: ${{ github.token }}
 
   upload-gemfury:
     needs: [package-x64, package-arm64]
     runs-on: ubuntu-latest
-    if: github.event.release.prerelease == false
 
     steps:
       - name: Checkout
@@ -231,4 +246,4 @@ jobs:
           token: ${{ secrets.TAP_UPDATE_TOKEN }}
           repository: DamianB-BitFlipper/homebrew-tap
           event-type: update-formula
-          client-payload: '{"version": "${{ github.event.release.tag_name }}"}'
+          client-payload: '{"version": "${{ github.event.release.tag_name }}", "prerelease": ${{ github.event.release.prerelease }}}'
