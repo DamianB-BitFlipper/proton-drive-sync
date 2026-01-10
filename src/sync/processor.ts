@@ -10,7 +10,7 @@ import { db } from '../db/index.js';
 import { createNode } from '../proton/create.js';
 import { deleteNode } from '../proton/delete.js';
 import { logger } from '../logger.js';
-import { DEFAULT_SYNC_CONCURRENCY, getExcludePatterns } from '../config.js';
+import { DEFAULT_SYNC_CONCURRENCY, getConfig } from '../config.js';
 import type { ProtonDriveClient } from '../proton/types.js';
 import {
   type Job,
@@ -106,13 +106,14 @@ function getErrorMessage(error: unknown): string {
 async function deleteNodeOrThrow(
   client: ProtonDriveClient,
   remotePath: string,
-  dryRun: boolean
-): Promise<{ existed: boolean }> {
-  const result = await deleteNode(client, remotePath, dryRun);
+  dryRun: boolean,
+  trashOnly: boolean
+): Promise<{ existed: boolean; trashed: boolean }> {
+  const result = await deleteNode(client, remotePath, dryRun, trashOnly);
   if (!result.success) {
     throw new Error(result.error);
   }
-  return { existed: result.existed };
+  return { existed: result.existed, trashed: result.trashed };
 }
 
 /** Helper to create/update a node, throws on failure */
@@ -184,9 +185,16 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
   try {
     switch (eventType) {
       case SyncEventType.DELETE: {
-        logger.info(`Deleting: ${remotePath}`);
-        const { existed } = await deleteNodeOrThrow(client, remotePath, dryRun);
-        logger.info(existed ? `Deleted: ${remotePath}` : `Already gone: ${remotePath}`);
+        const config = getConfig();
+        const trashOnly = config.remote_delete_behavior === 'trash';
+        const actionLabel = trashOnly ? 'Trashing' : 'Permanently deleting';
+        logger.info(`${actionLabel}: ${remotePath}`);
+        const { existed, trashed } = await deleteNodeOrThrow(client, remotePath, dryRun, trashOnly);
+        if (!existed) {
+          logger.info(`Already gone: ${remotePath}`);
+        } else {
+          logger.info(trashed ? `Trashed: ${remotePath}` : `Permanently deleted: ${remotePath}`);
+        }
         // Remove node mapping on delete
         db.transaction((tx) => {
           deleteNodeMapping(localPath, remotePath, dryRun, tx);
@@ -239,7 +247,7 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
         });
 
         // Step 3: Scan children and queue jobs for unsynced items
-        const excludePatterns = getExcludePatterns();
+        const excludePatterns = getConfig().exclude_patterns;
         const fsState = await scanDirectory(localPath, excludePatterns);
 
         db.transaction((tx) => {

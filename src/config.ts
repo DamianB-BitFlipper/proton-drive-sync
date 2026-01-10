@@ -26,12 +26,21 @@ export interface ExcludePattern {
   globs: string[];
 }
 
+/** Behavior when a local file is deleted */
+export const RemoteDeleteBehavior = {
+  TRASH: 'trash',
+  PERMANENT: 'permanent',
+} as const;
+
+export type RemoteDeleteBehavior = (typeof RemoteDeleteBehavior)[keyof typeof RemoteDeleteBehavior];
+
 export interface Config {
   sync_dirs: SyncDir[];
   sync_concurrency: number;
-  dashboard_host?: string;
-  dashboard_port?: number;
-  exclude_patterns?: ExcludePattern[];
+  remote_delete_behavior: RemoteDeleteBehavior;
+  dashboard_host: string;
+  dashboard_port: number;
+  exclude_patterns: ExcludePattern[];
 }
 
 /** Config keys that can be watched for changes */
@@ -50,11 +59,24 @@ export const CONFIG_CHECK_SIGNAL = 'config:check';
 /** Default sync concurrency */
 export const DEFAULT_SYNC_CONCURRENCY = 4;
 
+/** Default remote delete behavior - move to trash for safety */
+export const DEFAULT_REMOTE_DELETE_BEHAVIOR: RemoteDeleteBehavior = 'trash';
+
 /** Default dashboard host (localhost only) */
 export const DEFAULT_DASHBOARD_HOST = '127.0.0.1';
 
 /** Default dashboard port */
 export const DEFAULT_DASHBOARD_PORT = 4242;
+
+/** Default configuration values */
+export const defaultConfig: Config = {
+  sync_dirs: [],
+  sync_concurrency: DEFAULT_SYNC_CONCURRENCY,
+  remote_delete_behavior: DEFAULT_REMOTE_DELETE_BEHAVIOR,
+  dashboard_host: DEFAULT_DASHBOARD_HOST,
+  dashboard_port: DEFAULT_DASHBOARD_PORT,
+  exclude_patterns: [],
+};
 
 const CONFIG_DIR = getConfigDir();
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
@@ -78,14 +100,10 @@ let currentConfig: Config | null = null;
 function parseConfig(throwOnError: boolean): Config | null {
   if (!existsSync(CONFIG_FILE)) {
     ensureConfigDir();
-    const defaultConfig: Config = {
-      sync_dirs: [],
-      sync_concurrency: DEFAULT_SYNC_CONCURRENCY,
-    };
     writeFileSync(CONFIG_FILE, JSON.stringify(defaultConfig, null, 2));
     chownToEffectiveUser(CONFIG_FILE);
     logger.info(`Created default config file: ${CONFIG_FILE}`);
-    return defaultConfig;
+    return { ...defaultConfig };
   }
 
   try {
@@ -106,6 +124,26 @@ function parseConfig(throwOnError: boolean): Config | null {
     // Default sync_concurrency if not set
     if (config.sync_concurrency === undefined) {
       config.sync_concurrency = DEFAULT_SYNC_CONCURRENCY;
+    }
+
+    // Default remote_delete_behavior if not set
+    if (config.remote_delete_behavior === undefined) {
+      config.remote_delete_behavior = DEFAULT_REMOTE_DELETE_BEHAVIOR;
+    }
+
+    // Default dashboard_host if not set
+    if (config.dashboard_host === undefined) {
+      config.dashboard_host = DEFAULT_DASHBOARD_HOST;
+    }
+
+    // Default dashboard_port if not set
+    if (config.dashboard_port === undefined) {
+      config.dashboard_port = DEFAULT_DASHBOARD_PORT;
+    }
+
+    // Default exclude_patterns if not set
+    if (config.exclude_patterns === undefined) {
+      config.exclude_patterns = [];
     }
 
     // Validate all sync_dirs entries
@@ -181,13 +219,6 @@ export function getConfig(): Config {
 }
 
 /**
- * Get exclusion patterns from config, guaranteed to return an array.
- */
-export function getExcludePatterns(): ExcludePattern[] {
-  return getConfig().exclude_patterns ?? [];
-}
-
-/**
  * Check if a path is within any of the configured sync directories.
  */
 export function isPathWatched(localPath: string): boolean {
@@ -219,6 +250,7 @@ function reloadConfig(): void {
   const keys: ConfigKey[] = [
     'sync_dirs',
     'sync_concurrency',
+    'remote_delete_behavior',
     'dashboard_host',
     'dashboard_port',
     'exclude_patterns',

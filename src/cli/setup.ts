@@ -13,10 +13,10 @@ import { existsSync } from 'fs';
 import { getStoredCredentials } from '../keychain.js';
 import { isAlreadyRunning, isStartupReady } from '../flags.js';
 import { logger } from '../logger.js';
-import { getConfig, DEFAULT_DASHBOARD_PORT } from '../config.js';
+import { getConfig } from '../config.js';
 import { getEffectiveHome } from '../paths.js';
 import { authCommand } from './auth.js';
-import { dashboardHostCommand, configCommand } from './config.js';
+import { dashboardHostCommand, configCommand, remoteDeleteBehaviorCommand } from './config.js';
 import { serviceInstallCommand, isServiceInstalled, loadSyncService } from './service/index.js';
 import type { InstallScope } from './service/types.js';
 
@@ -252,6 +252,12 @@ async function configureAuth(): Promise<void> {
   await authCommand({});
 }
 
+async function configureDeleteBehavior(): Promise<void> {
+  showSection('Remote Delete Behavior');
+  // Use the interactive config command
+  await remoteDeleteBehaviorCommand();
+}
+
 async function configureAdvanced(): Promise<void> {
   showSection('Advanced Configuration');
 
@@ -280,8 +286,8 @@ async function waitForServiceAndOpenDashboard(): Promise<void> {
   }
 
   const config = getConfig();
-  const port = config.dashboard_port ?? DEFAULT_DASHBOARD_PORT;
-  const dashboardHost = config.dashboard_host ?? '127.0.0.1';
+  const port = config.dashboard_port;
+  const dashboardHost = config.dashboard_host;
 
   if (running) {
     logger.info('Service started successfully!');
@@ -324,10 +330,13 @@ export async function setupCommand(): Promise<void> {
   // Step 3: Authentication
   await configureAuth();
 
-  // Step 4: Advanced configuration (optional)
+  // Step 4: Delete behavior configuration
+  await configureDeleteBehavior();
+
+  // Step 5: Advanced configuration (optional)
   await configureAdvanced();
 
-  // Step 5: Wait for service and show dashboard URL
+  // Step 6: Wait for service and show dashboard URL
   if (serviceInstalled || (await isAlreadyRunning())) {
     await waitForServiceAndOpenDashboard();
   } else {
@@ -339,7 +348,7 @@ export async function setupCommand(): Promise<void> {
     console.log('  Then visit the dashboard to configure sync directories:');
     console.log('');
     const config = getConfig();
-    const port = config.dashboard_port ?? DEFAULT_DASHBOARD_PORT;
+    const port = config.dashboard_port;
     console.log(`    http://localhost:${port}`);
     console.log('');
   }

@@ -27,13 +27,7 @@ import { FLAGS, ONBOARDING_STATE, setFlag, clearFlag, hasFlag, getFlagData } fro
 import { sendSignal } from '../signals.js';
 import { logger, enableIpcLogging } from '../logger.js';
 import { chownToEffectiveUser } from '../paths.js';
-import {
-  CONFIG_FILE,
-  CONFIG_CHECK_SIGNAL,
-  DEFAULT_SYNC_CONCURRENCY,
-  DEFAULT_DASHBOARD_HOST,
-  DEFAULT_DASHBOARD_PORT,
-} from '../config.js';
+import { CONFIG_FILE, CONFIG_CHECK_SIGNAL, defaultConfig } from '../config.js';
 import {
   type AuthStatusUpdate,
   type DashboardJob,
@@ -759,8 +753,8 @@ app.get('/controls', async (c) => {
   );
 
   // Server-side render sync concurrency and directories
-  const syncConcurrency = currentConfig?.sync_concurrency ?? DEFAULT_SYNC_CONCURRENCY;
-  const syncDirs = currentConfig?.sync_dirs ?? [];
+  const syncConcurrency = currentConfig?.sync_concurrency ?? defaultConfig.sync_concurrency;
+  const syncDirs = currentConfig?.sync_dirs ?? defaultConfig.sync_dirs;
   const syncDirsHtml = syncDirs.length > 0 ? renderSyncDirsHtml(syncDirs) : '';
   const showNoDirsMessage = syncDirs.length === 0;
 
@@ -1003,9 +997,9 @@ app.post('/api/config', async (c) => {
   try {
     const body = await c.req.json();
     const newConfig: Config = {
+      ...defaultConfig,
       ...currentConfig,
-      sync_dirs: body.sync_dirs || [],
-      sync_concurrency: body.sync_concurrency || 1,
+      ...body,
     };
 
     // Validate
@@ -1082,9 +1076,9 @@ app.post('/api/add-directory', async (c) => {
     // Add to config
     const newDir = { source_path: sourcePath, remote_root: remoteRoot };
     const newConfig: Config = {
+      ...defaultConfig,
       ...currentConfig,
       sync_dirs: [...(currentConfig?.sync_dirs || []), newDir],
-      sync_concurrency: currentConfig?.sync_concurrency || 8,
     };
 
     // Write to config file
@@ -1366,8 +1360,8 @@ async function runDashboardServer(): Promise<void> {
     // This ensures we have the correct dashboard_host/dashboard_port values
     await waitForInitialConfig();
 
-    const host = currentConfig?.dashboard_host ?? DEFAULT_DASHBOARD_HOST;
-    const port = currentConfig?.dashboard_port ?? DEFAULT_DASHBOARD_PORT;
+    const host = currentConfig?.dashboard_host ?? defaultConfig.dashboard_host;
+    const port = currentConfig?.dashboard_port ?? defaultConfig.dashboard_port;
 
     // Security warning for external interface binding
     if (host === '0.0.0.0' || (host !== '127.0.0.1' && host !== 'localhost')) {

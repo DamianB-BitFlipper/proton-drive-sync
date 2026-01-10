@@ -7,13 +7,13 @@ import { select, confirm, input } from '@inquirer/prompts';
 
 import {
   CONFIG_FILE,
+  CONFIG_CHECK_SIGNAL,
   ensureConfigDir,
   getConfig,
-  DEFAULT_DASHBOARD_HOST,
-  DEFAULT_DASHBOARD_PORT,
-  DEFAULT_SYNC_CONCURRENCY,
+  defaultConfig,
 } from '../config.js';
-import type { Config, ExcludePattern, SyncDir } from '../config.js';
+import type { Config, ExcludePattern, SyncDir, RemoteDeleteBehavior } from '../config.js';
+import { sendSignal } from '../signals.js';
 import { chownToEffectiveUser } from '../paths.js';
 import { validateGlob, clearRegexCache } from '../sync/exclusions.js';
 
@@ -31,6 +31,7 @@ export async function configCommand(): Promise<void> {
       message: 'What would you like to configure?',
       choices: [
         { name: 'View current config', value: 'get' },
+        { name: 'Remote delete behavior', value: 'remote-delete' },
         { name: 'Dashboard host', value: 'dashboard-host' },
         { name: 'Dashboard port', value: 'dashboard-port' },
         { name: 'Sync concurrency', value: 'concurrency' },
@@ -47,6 +48,9 @@ export async function configCommand(): Promise<void> {
     switch (action) {
       case 'get':
         getCommand(undefined, {});
+        break;
+      case 'remote-delete':
+        await remoteDeleteBehaviorCommand();
         break;
       case 'dashboard-host':
         await dashboardHostCommand();
@@ -74,7 +78,7 @@ export async function configCommand(): Promise<void> {
 /**
  * Load config file as raw JSON to preserve unknown fields
  */
-function loadConfigRaw(): Record<string, unknown> {
+export function loadConfigRaw(): Record<string, unknown> {
   if (!existsSync(CONFIG_FILE)) {
     return {};
   }
@@ -83,12 +87,14 @@ function loadConfigRaw(): Record<string, unknown> {
 }
 
 /**
- * Save config file
+ * Save config file and notify running service
  */
-function saveConfigRaw(config: Record<string, unknown>): void {
+export function saveConfigRaw(config: Record<string, unknown>): void {
   ensureConfigDir();
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
   chownToEffectiveUser(CONFIG_FILE);
+  // Notify running service to reload config
+  sendSignal(CONFIG_CHECK_SIGNAL);
 }
 
 // ============================================================================
@@ -129,9 +135,10 @@ export function getCommand(key: string | undefined, options: GetOptions): void {
   } else {
     // Show all config
     console.log('Current configuration:\n');
-    console.log(`  dashboard_host: ${config.dashboard_host ?? DEFAULT_DASHBOARD_HOST}`);
-    console.log(`  dashboard_port: ${config.dashboard_port ?? DEFAULT_DASHBOARD_PORT}`);
-    console.log(`  sync_concurrency: ${config.sync_concurrency ?? DEFAULT_SYNC_CONCURRENCY}`);
+    console.log(`  dashboard_host: ${config.dashboard_host}`);
+    console.log(`  dashboard_port: ${config.dashboard_port}`);
+    console.log(`  sync_concurrency: ${config.sync_concurrency}`);
+    console.log(`  remote_delete_behavior: ${config.remote_delete_behavior}`);
 
     if (config.sync_dirs && config.sync_dirs.length > 0) {
       console.log('\n  sync_dirs:');
@@ -153,6 +160,64 @@ export function getCommand(key: string | undefined, options: GetOptions): void {
     }
 
     console.log(`\nConfig file: ${CONFIG_FILE}`);
+  }
+}
+
+// ============================================================================
+// Remote Delete Behavior Subcommand
+// ============================================================================
+
+/**
+ * Set remote delete behavior (interactive if no value provided)
+ */
+export async function remoteDeleteBehaviorCommand(value?: string): Promise<void> {
+  if (value !== undefined) {
+    // Non-interactive mode
+    if (value !== 'trash' && value !== 'permanent') {
+      console.error('Invalid value. Must be "trash" or "permanent".');
+      process.exit(1);
+    }
+    const config = loadConfigRaw();
+    config.remote_delete_behavior = value as RemoteDeleteBehavior;
+    saveConfigRaw(config);
+    console.log(`Set remote_delete_behavior = ${value}`);
+    return;
+  }
+
+  // Interactive mode
+  const config = loadConfigRaw();
+  const current =
+    (config.remote_delete_behavior as RemoteDeleteBehavior) ?? defaultConfig.remote_delete_behavior;
+
+  const behavior = await select({
+    message: 'When you delete a local file, what should happen to the copy on Proton Drive?',
+    choices: [
+      {
+        name: 'Move to trash (recoverable)',
+        value: 'trash',
+        description:
+          'Note: You will need to periodically empty the trash manually to free up space.',
+      },
+      {
+        name: 'Delete permanently (unrecoverable)',
+        value: 'permanent',
+        description: 'WARNING: Files will be permanently deleted and cannot be recovered.',
+      },
+    ],
+    default: current,
+  });
+
+  config.remote_delete_behavior = behavior;
+  saveConfigRaw(config);
+
+  if (behavior === 'trash') {
+    console.log('Remote delete behavior set to: move to trash');
+    console.log(
+      'Note: You will need to periodically empty the Proton Drive trash to free up space.'
+    );
+  } else {
+    console.log('Remote delete behavior set to: permanent deletion');
+    console.log('Warning: Deleted files cannot be recovered.');
   }
 }
 
@@ -193,7 +258,7 @@ export async function dashboardHostCommand(value?: string): Promise<void> {
     default: currentlyRemote,
   });
 
-  const newHost = enableRemote ? '0.0.0.0' : DEFAULT_DASHBOARD_HOST;
+  const newHost = enableRemote ? '0.0.0.0' : defaultConfig.dashboard_host;
   config.dashboard_host = newHost;
   saveConfigRaw(config);
 
@@ -228,7 +293,7 @@ export async function dashboardPortCommand(value?: string): Promise<void> {
 
   // Interactive mode
   const config = loadConfigRaw();
-  const currentPort = (config.dashboard_port as number) ?? DEFAULT_DASHBOARD_PORT;
+  const currentPort = (config.dashboard_port as number) ?? defaultConfig.dashboard_port;
 
   const portStr = await input({
     message: 'Dashboard port:',
@@ -272,7 +337,7 @@ export async function concurrencyCommand(value?: string): Promise<void> {
 
   // Interactive mode
   const config = loadConfigRaw();
-  const current = (config.sync_concurrency as number) ?? DEFAULT_SYNC_CONCURRENCY;
+  const current = (config.sync_concurrency as number) ?? defaultConfig.sync_concurrency;
 
   const numStr = await input({
     message: 'Sync concurrency (parallel uploads):',

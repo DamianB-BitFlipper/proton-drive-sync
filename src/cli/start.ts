@@ -6,7 +6,12 @@
 
 import { getConfig, watchConfig } from '../config.js';
 import { logger, setDryRun } from '../logger.js';
-import { startSignalListener, stopSignalListener, registerSignalHandler } from '../signals.js';
+import {
+  startSignalListener,
+  stopSignalListener,
+  registerSignalHandler,
+  clearAllSignals,
+} from '../signals.js';
 import {
   acquireRunLock,
   releaseRunLock,
@@ -235,7 +240,8 @@ export async function startCommand(options: StartOptions): Promise<void> {
     logger.info('Starting in paused state');
   }
 
-  // Start signal listener for IPC
+  // Clear any stale signals from when service was offline, then start listener
+  clearAllSignals();
   startSignalListener();
 
   // Start watching for config reload signals

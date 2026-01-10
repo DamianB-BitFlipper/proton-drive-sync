@@ -146,6 +146,7 @@ export interface CreateResult {
 export interface DeleteOperationResult {
   success: boolean;
   existed: boolean;
+  trashed: boolean; // true if moved to trash, false if permanently deleted
   nodeUid?: string;
   nodeType?: string;
   error?: string;

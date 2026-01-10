@@ -11,7 +11,7 @@ import { logger } from '../logger.js';
 import { registerSignalHandler } from '../signals.js';
 import { isPaused, setFlag, FLAGS } from '../flags.js';
 import { sendStatusToDashboard } from '../dashboard/server.js';
-import { getConfig, onConfigChange, getExcludePatterns } from '../config.js';
+import { getConfig, onConfigChange } from '../config.js';
 
 import type { Config } from '../config.js';
 import type { ProtonDriveClient } from '../proton/types.js';
@@ -110,7 +110,7 @@ function handleFileChange(file: FileChange, config: Config, dryRun: boolean): vo
   const { localPath, remotePath } = target;
 
   // Check if path is excluded
-  const excludePatterns = getExcludePatterns();
+  const excludePatterns = getConfig().exclude_patterns;
   if (isPathExcluded(localPath, file.watchRoot, excludePatterns)) {
     logger.debug(`[watcher] Skipping excluded path: ${file.name}`);
     return;

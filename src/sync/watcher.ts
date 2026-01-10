@@ -9,7 +9,7 @@ import { watch, type FSWatcher, statSync, existsSync } from 'fs';
 import { join, relative } from 'path';
 import { eq, like } from 'drizzle-orm';
 import { logger } from '../logger.js';
-import { type Config, type ExcludePattern, getExcludePatterns } from '../config.js';
+import { type Config, type ExcludePattern, getConfig } from '../config.js';
 import { db } from '../db/index.js';
 import { fileState } from '../db/schema.js';
 import { isPathExcluded } from './exclusions.js';
@@ -118,7 +118,7 @@ export async function scanDirectory(
   try {
     // Use Bun.Glob to scan all files and directories
     const glob = new Bun.Glob('**/*');
-    const entries = glob.scanSync({ cwd: watchDir, dot: false });
+    const entries = glob.scanSync({ cwd: watchDir, dot: true });
 
     for (const entry of entries) {
       const fullPath = join(watchDir, entry);
@@ -255,7 +255,7 @@ export async function queryAllChanges(
   onFileChangeBatch: FileChangeBatchHandler
 ): Promise<number> {
   let totalChanges = 0;
-  const excludePatterns = getExcludePatterns();
+  const excludePatterns = getConfig().exclude_patterns;
 
   for (const dir of config.sync_dirs) {
     const watchDir = dir.source_path;
@@ -617,7 +617,7 @@ export async function triggerFullReconciliation(
   logger.info('Running full filesystem reconciliation...');
 
   let totalChanges = 0;
-  const excludePatterns = getExcludePatterns();
+  const excludePatterns = getConfig().exclude_patterns;
 
   for (const dir of config.sync_dirs) {
     const watchDir = dir.source_path;

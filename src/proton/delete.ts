@@ -1,10 +1,11 @@
 /**
  * Proton Drive - Delete File or Directory
  *
- * Deletes a file or directory from Proton Drive permanently.
+ * Deletes a file or directory from Proton Drive.
  * - Pass a path (e.g., my_files/foo/bar.txt) and the corresponding remote item is deleted.
  * - If the remote item doesn't exist, does nothing (noop).
- * - Uses two-step process: trash first, then permanently delete.
+ * - By default, moves to trash only (recoverable).
+ * - If trashOnly is false, permanently deletes (trash first, then delete from trash).
  *
  * Path handling:
  * - If the path starts with my_files/, that prefix is stripped.
@@ -26,15 +27,17 @@ export type { DeleteProtonDriveClient, DeleteOperationResult } from './types.js'
  * @param client - The Proton Drive client
  * @param remotePath - The remote path (e.g., "my_files/foo/bar.txt")
  * @param dryRun - If true, skip network calls and return dummy result
- * @returns DeleteOperationResult with success status
+ * @param trashOnly - If true, only move to trash (recoverable). If false, permanently delete.
+ * @returns DeleteOperationResult with success status and whether it was trashed or permanently deleted
  */
 export async function deleteNode(
   client: DeleteProtonDriveClient,
   remotePath: string,
-  dryRun = false
+  dryRun = false,
+  trashOnly = true
 ): Promise<DeleteOperationResult> {
   if (dryRun) {
-    return { success: true, existed: false };
+    return { success: true, existed: false, trashed: trashOnly };
   }
   const { parentParts, name } = parsePath(remotePath);
 
@@ -45,6 +48,7 @@ export async function deleteNode(
     return {
       success: false,
       existed: false,
+      trashed: false,
       error: `Failed to get root folder: ${rootFolder.error}`,
     };
   }
@@ -58,7 +62,7 @@ export async function deleteNode(
     const traverseResult = await traverseRemotePath(client, rootFolderUid, parentParts);
 
     if (!traverseResult) {
-      return { success: true, existed: false };
+      return { success: true, existed: false, trashed: false };
     }
 
     targetFolderUid = traverseResult;
@@ -68,10 +72,10 @@ export async function deleteNode(
   const targetNode = await findNodeByName(client, targetFolderUid, name);
 
   if (!targetNode) {
-    return { success: true, existed: false };
+    return { success: true, existed: false, trashed: false };
   }
 
-  // Delete the node (two-step: trash first, then permanently delete)
+  // Delete the node
   try {
     // Step 1: Move to trash (gracefully handle if already trashed)
     try {
@@ -92,16 +96,19 @@ export async function deleteNode(
       }
     }
 
-    // Step 2: Permanently delete from trash
-    for await (const result of client.deleteNodes([targetNode.uid])) {
-      if (!result.ok) {
-        throw new Error(`Failed to delete: ${result.error}`);
+    // Step 2: Permanently delete from trash (only if not trashOnly)
+    if (!trashOnly) {
+      for await (const result of client.deleteNodes([targetNode.uid])) {
+        if (!result.ok) {
+          throw new Error(`Failed to delete: ${result.error}`);
+        }
       }
     }
 
     return {
       success: true,
       existed: true,
+      trashed: trashOnly,
       nodeUid: targetNode.uid,
       nodeType: targetNode.type,
     };
@@ -109,6 +116,7 @@ export async function deleteNode(
     return {
       success: false,
       existed: true,
+      trashed: trashOnly,
       nodeUid: targetNode.uid,
       nodeType: targetNode.type,
       error: (error as Error).message,
