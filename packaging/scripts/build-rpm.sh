@@ -53,15 +53,12 @@ rpmbuild --define "_topdir $(pwd)/rpmbuild" \
 	--target "${ARCH}" \
 	-bb rpmbuild/SPECS/proton-drive-sync.spec
 
-# Pre-cache passphrase in GPG agent for non-interactive signing
-KEY_ID="832B348E3FF2D4F3"
-KEYGRIP=$(gpg --list-secret-keys --with-keygrip "${KEY_ID}" | grep Keygrip | head -1 | awk '{print $3}')
-echo "${GPG_PASSPHRASE}" | /usr/lib/gnupg/gpg-preset-passphrase --preset "${KEYGRIP}"
-
 # Sign the package
 RPM_FILE=$(find rpmbuild/RPMS/${ARCH}/ -name "*.rpm" | head -1)
 echo "Signing ${RPM_FILE}..."
-rpm --define "_gpg_name ${KEY_ID}" --addsign "${RPM_FILE}"
+rpmsign --define "_gpg_name 832B348E3FF2D4F3" \
+	--define "__gpg_sign_cmd %{__gpg} gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -u '%{_gpg_name}' -sbo %{__signature_filename} %{__plaintext_filename}" \
+	--addsign "${RPM_FILE}" 3<<<"${GPG_PASSPHRASE}"
 
 # Verify signature
 rpm -K "${RPM_FILE}"
