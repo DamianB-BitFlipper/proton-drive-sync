@@ -11,7 +11,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { createReadStream, statSync, watchFile, unwatchFile } from 'fs';
 import { createInterface } from 'readline';
-import { join, basename } from 'path';
+import { join } from 'path';
 import { xdgState } from 'xdg-basedir';
 import { EventEmitter } from 'events';
 import {
@@ -547,9 +547,7 @@ function renderConfigInfo(config: Config | null): string {
   <div class="flex flex-wrap gap-3 max-h-24 overflow-y-auto custom-scrollbar p-1">
   ${config.sync_dirs
     .map((dir) => {
-      const folderName = basename(dir.source_path);
-      const remotePath =
-        dir.remote_root === '/' ? `/${folderName}` : `${dir.remote_root}/${folderName}`;
+      const remotePath = dir.remote_root || '/';
       return `
     <div class="flex items-center gap-2 px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-md shadow-sm group hover:border-gray-600 transition-colors">
       <div class="flex items-center gap-2">

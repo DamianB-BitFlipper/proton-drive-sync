@@ -50,13 +50,13 @@ chmod 755 "${PKG_DIR}/DEBIAN/postrm"
 # Build the package
 dpkg-deb --build "${PKG_DIR}" "${DEB_FILE}"
 
+# Pre-cache passphrase in GPG agent for non-interactive signing
+KEY_ID="832B348E3FF2D4F3"
+KEYGRIP=$(gpg --list-secret-keys --with-keygrip "${KEY_ID}" | grep Keygrip | head -1 | awk '{print $3}')
+echo "${GPG_PASSPHRASE}" | /usr/lib/gnupg/gpg-preset-passphrase --preset "${KEYGRIP}"
+
 # Sign the package
 echo "Signing ${DEB_FILE}..."
-echo "${GPG_PASSPHRASE}" | dpkg-sig --sign builder \
-	-g "--batch --pinentry-mode loopback --passphrase-fd 0" \
-	"${DEB_FILE}"
-
-# Verify signature
-dpkg-sig --verify "${DEB_FILE}"
+debsigs --sign=origin --default-key="${KEY_ID}" "${DEB_FILE}"
 
 echo "Successfully built and signed: ${DEB_FILE}"

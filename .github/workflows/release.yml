@@ -67,9 +67,21 @@ jobs:
         with:
           files: proton-drive-sync-${{ matrix.target }}.zip
 
-  package-x64:
+  package:
     needs: build
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x64
+            deb_arch: amd64
+            rpm_arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            deb_arch: arm64
+            rpm_arch: aarch64
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -87,23 +99,23 @@ jobs:
             echo "package_name=proton-drive-sync" >> $GITHUB_OUTPUT
           fi
 
-      - name: Download Linux x64 artifact
+      - name: Download Linux ${{ matrix.arch }} artifact
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           mkdir -p artifacts
-          gh release download "v${VERSION}" -p "proton-drive-sync-linux-x64.tar.gz" -D artifacts/
+          gh release download "v${VERSION}" -p "proton-drive-sync-linux-${{ matrix.arch }}.tar.gz" -D artifacts/
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Extract binary
         run: |
           mkdir -p binaries
-          tar -xzf artifacts/proton-drive-sync-linux-x64.tar.gz -C binaries/
+          tar -xzf artifacts/proton-drive-sync-linux-${{ matrix.arch }}.tar.gz -C binaries/
 
       - name: Install packaging tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev rpm dpkg-sig
+          sudo apt-get install -y dpkg-dev rpm debsigs
 
       - name: Setup GPG
         run: ./packaging/scripts/setup-gpg.sh
@@ -114,7 +126,7 @@ jobs:
         run: ./packaging/scripts/build-deb.sh
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          ARCH: amd64
+          ARCH: ${{ matrix.deb_arch }}
           BINARY_PATH: binaries/proton-drive-sync
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
@@ -123,7 +135,7 @@ jobs:
         run: ./packaging/scripts/build-rpm.sh
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          ARCH: x86_64
+          ARCH: ${{ matrix.rpm_arch }}
           BINARY_PATH: binaries/proton-drive-sync
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
@@ -132,83 +144,13 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           gh release upload "v${VERSION}" \
-            ${{ steps.version.outputs.package_name }}_${VERSION}_amd64.deb \
-            ${{ steps.version.outputs.package_name }}-*.x86_64.rpm
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-  package-arm64:
-    needs: build
-    runs-on: ubuntu-24.04-arm
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Get version and package name
-        id: version
-        run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
-
-          if [ "${{ github.event.release.prerelease }}" = "true" ]; then
-            echo "package_name=proton-drive-sync-prerelease" >> $GITHUB_OUTPUT
-          else
-            echo "package_name=proton-drive-sync" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Download Linux arm64 artifact
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          mkdir -p artifacts
-          gh release download "v${VERSION}" -p "proton-drive-sync-linux-arm64.tar.gz" -D artifacts/
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Extract binary
-        run: |
-          mkdir -p binaries
-          tar -xzf artifacts/proton-drive-sync-linux-arm64.tar.gz -C binaries/
-
-      - name: Install packaging tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y dpkg-dev rpm dpkg-sig
-
-      - name: Setup GPG
-        run: ./packaging/scripts/setup-gpg.sh
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-
-      - name: Build and sign .deb package
-        run: ./packaging/scripts/build-deb.sh
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          ARCH: arm64
-          BINARY_PATH: binaries/proton-drive-sync
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
-
-      - name: Build and sign .rpm package
-        run: ./packaging/scripts/build-rpm.sh
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          ARCH: aarch64
-          BINARY_PATH: binaries/proton-drive-sync
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
-
-      - name: Upload packages to release
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          gh release upload "v${VERSION}" \
-            ${{ steps.version.outputs.package_name }}_${VERSION}_arm64.deb \
-            ${{ steps.version.outputs.package_name }}-*.aarch64.rpm
+            ${{ steps.version.outputs.package_name }}_${VERSION}_${{ matrix.deb_arch }}.deb \
+            ${{ steps.version.outputs.package_name }}-*.${{ matrix.rpm_arch }}.rpm
         env:
           GH_TOKEN: ${{ github.token }}
 
   upload-gemfury:
-    needs: [package-x64, package-arm64]
+    needs: package
     runs-on: ubuntu-latest
 
     steps:
@@ -236,7 +178,7 @@ jobs:
           PACKAGES_DIR: packages
 
   update-homebrew:
-    needs: [package-x64, package-arm64]
+    needs: package
     runs-on: ubuntu-latest
 
     steps:
