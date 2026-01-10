@@ -1,6 +1,6 @@
 {
   "name": "proton-drive-sync",
-  "version": "0.2.1",
+  "version": "0.2.2-beta.1",
   "description": "Sync local files to Proton Drive",
   "type": "module",
   "bin": {
