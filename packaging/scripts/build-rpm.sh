@@ -63,6 +63,9 @@ rpmsign --define "_gpg_name 832B348E3FF2D4F3" \
 	--define "__gpg_sign_cmd %{__gpg} gpg --batch --yes --no-tty --pinentry-mode loopback --passphrase-fd 3 -u '%{_gpg_name}' -sbo %{__signature_filename} %{__plaintext_filename}" \
 	--addsign "${RPM_FILE}" 3<<<"${GPG_PASSPHRASE}"
 
+# Import public key to RPM keyring for verification
+gpg --armor --export 832B348E3FF2D4F3 | rpm --import /dev/stdin
+
 # Verify signature
 rpm -K "${RPM_FILE}"
 
