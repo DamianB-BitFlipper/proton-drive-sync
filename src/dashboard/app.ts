@@ -315,7 +315,11 @@ function renderAuthStatus(auth: AuthStatusUpdate): string {
 
   // Set authenticated label only when status is authenticated (to safely access username)
   if (auth.status === 'authenticated') {
-    const label = auth.username ? `${auth.username}` : 'Logged in';
+    const label = auth.username
+      ? auth.username.includes('@')
+        ? auth.username
+        : `${auth.username}@proton.me`
+      : 'Logged in';
     statusConfig.authenticated.label = label;
     if (loggedAuthUser !== label) {
       loggedAuthUser = label;
