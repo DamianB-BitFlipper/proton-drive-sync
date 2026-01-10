@@ -15,7 +15,7 @@ jobs:
         include:
           - os: macos-15
             target: darwin-arm64
-          - os: macos-15
+          - os: macos-15-intel
             target: darwin-x64
           - os: ubuntu-latest
             target: linux-x64
