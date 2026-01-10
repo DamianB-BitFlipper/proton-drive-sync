@@ -356,6 +356,11 @@ function addSyncDir(sourcePath: string, remoteRoot: string): void {
     remoteRoot = '/' + remoteRoot;
   }
 
+  // Remove trailing slash from source path to ensure consistent path matching
+  if (sourcePath.endsWith('/') && sourcePath.length > 1) {
+    sourcePath = sourcePath.slice(0, -1);
+  }
+
   const config = loadConfigRaw();
   const syncDirs = (config.sync_dirs as SyncDir[]) ?? [];
 

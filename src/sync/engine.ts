@@ -72,9 +72,11 @@ function resolveSyncTarget(
   const localPath = join(file.watchRoot, file.name);
 
   // Find the sync_dir that matches this watcher's root
+  // Normalize both paths to handle trailing slashes consistently
   const syncDir = config.sync_dirs.find((d) => {
     const sourcePath = d.source_path.endsWith('/') ? d.source_path.slice(0, -1) : d.source_path;
-    return file.watchRoot === sourcePath;
+    const watchRoot = file.watchRoot.endsWith('/') ? file.watchRoot.slice(0, -1) : file.watchRoot;
+    return watchRoot === sourcePath;
   });
 
   if (!syncDir) return null;
