@@ -5,8 +5,15 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { select, confirm, input } from '@inquirer/prompts';
 
-import { CONFIG_FILE, ensureConfigDir, getConfig, defaultConfig } from '../config.js';
+import {
+  CONFIG_FILE,
+  CONFIG_CHECK_SIGNAL,
+  ensureConfigDir,
+  getConfig,
+  defaultConfig,
+} from '../config.js';
 import type { Config, ExcludePattern, SyncDir, RemoteDeleteBehavior } from '../config.js';
+import { sendSignal } from '../signals.js';
 import { chownToEffectiveUser } from '../paths.js';
 import { validateGlob, clearRegexCache } from '../sync/exclusions.js';
 
@@ -80,12 +87,14 @@ export function loadConfigRaw(): Record<string, unknown> {
 }
 
 /**
- * Save config file
+ * Save config file and notify running service
  */
 export function saveConfigRaw(config: Record<string, unknown>): void {
   ensureConfigDir();
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
   chownToEffectiveUser(CONFIG_FILE);
+  // Notify running service to reload config
+  sendSignal(CONFIG_CHECK_SIGNAL);
 }
 
 // ============================================================================
@@ -176,22 +185,18 @@ export async function remoteDeleteBehaviorCommand(value?: string): Promise<void>
   }
 
   // Interactive mode
-  console.log('');
-  console.log('  When you delete a file locally, what should happen on Proton Drive?');
-  console.log('');
-
   const config = loadConfigRaw();
   const current =
     (config.remote_delete_behavior as RemoteDeleteBehavior) ?? defaultConfig.remote_delete_behavior;
 
   const behavior = await select({
-    message: 'Remote delete behavior:',
+    message: 'When you delete a local file, what should happen to the copy on Proton Drive?',
     choices: [
       {
         name: 'Move to trash (recoverable)',
         value: 'trash',
         description:
-          'Files can be recovered from Proton Drive trash. You will need to periodically empty the trash manually to free up space.',
+          'Note: You will need to periodically empty the trash manually to free up space.',
       },
       {
         name: 'Delete permanently (unrecoverable)',

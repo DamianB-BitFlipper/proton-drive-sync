@@ -32,6 +32,13 @@ export function hasSignal(signal: string): boolean {
 }
 
 /**
+ * Clear all signals from the queue (useful on startup to discard stale signals).
+ */
+export function clearAllSignals(): void {
+  db.delete(schema.signals).run();
+}
+
+/**
  * Register a handler for a specific signal. Handler is called when signal is detected.
  */
 export function registerSignalHandler(signal: string, handler: () => void): void {

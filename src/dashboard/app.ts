@@ -754,7 +754,7 @@ app.get('/controls', async (c) => {
 
   // Server-side render sync concurrency and directories
   const syncConcurrency = currentConfig?.sync_concurrency ?? defaultConfig.sync_concurrency;
-  const syncDirs = currentConfig?.sync_dirs ?? [];
+  const syncDirs = currentConfig?.sync_dirs ?? defaultConfig.sync_dirs;
   const syncDirsHtml = syncDirs.length > 0 ? renderSyncDirsHtml(syncDirs) : '';
   const showNoDirsMessage = syncDirs.length === 0;
 
