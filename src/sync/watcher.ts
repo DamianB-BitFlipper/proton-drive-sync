@@ -118,7 +118,7 @@ export async function scanDirectory(
   try {
     // Use Bun.Glob to scan all files and directories
     const glob = new Bun.Glob('**/*');
-    const entries = glob.scanSync({ cwd: watchDir, dot: true });
+    const entries = glob.scanSync({ cwd: watchDir, dot: true, onlyFiles: false });
 
     for (const entry of entries) {
       const fullPath = join(watchDir, entry);

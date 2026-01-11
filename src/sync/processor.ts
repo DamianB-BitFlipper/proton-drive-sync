@@ -22,8 +22,18 @@ import {
   categorizeError,
   scheduleRetry,
 } from './queue.js';
-import { getNodeMapping, setNodeMapping, deleteNodeMapping } from './nodes.js';
-import { getChangeToken, storeChangeToken } from './fileState.js';
+import {
+  getNodeMapping,
+  setNodeMapping,
+  deleteNodeMapping,
+  deleteNodeMappingsUnderPath,
+} from './nodes.js';
+import {
+  getChangeToken,
+  storeChangeToken,
+  deleteChangeToken,
+  deleteChangeTokensUnderPath,
+} from './fileState.js';
 import { scanDirectory } from './watcher.js';
 
 // ============================================================================
@@ -189,15 +199,26 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
         const trashOnly = config.remote_delete_behavior === 'trash';
         const actionLabel = trashOnly ? 'Trashing' : 'Permanently deleting';
         logger.info(`${actionLabel}: ${remotePath}`);
+
+        // Check if this is a directory before deleting (needed for cleanup)
+        const mapping = getNodeMapping(localPath, remotePath);
+        const isDirectory = mapping?.isDirectory ?? false;
+
         const { existed, trashed } = await deleteNodeOrThrow(client, remotePath, dryRun, trashOnly);
         if (!existed) {
           logger.info(`Already gone: ${remotePath}`);
         } else {
           logger.info(trashed ? `Trashed: ${remotePath}` : `Permanently deleted: ${remotePath}`);
         }
-        // Remove node mapping on delete
+        // Remove node mapping and file_state on delete
         db.transaction((tx) => {
+          deleteChangeToken(localPath, dryRun, tx);
           deleteNodeMapping(localPath, remotePath, dryRun, tx);
+          // For directories, also clean up all children entries
+          if (isDirectory) {
+            deleteChangeTokensUnderPath(localPath, tx);
+            deleteNodeMappingsUnderPath(localPath, remotePath, tx);
+          }
           markJobSynced(id, localPath, dryRun, tx);
         });
         return;
