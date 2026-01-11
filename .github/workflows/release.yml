@@ -196,20 +196,28 @@ jobs:
             pkgname: proton-drive-sync-bin
             pkgdesc: 'Sync local directories to Proton Drive cloud storage'
 
-    # Only run the matrix entry that matches the release type
-    if: github.event.release.prerelease == matrix.prerelease
-
     steps:
+      # Only run the matrix entry that matches the release type
+      - name: Check if should run
+        id: check
+        run: |
+          if [[ "${{ github.event.release.prerelease }}" != "${{ matrix.prerelease }}" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout
+        if: steps.check.outputs.skip != 'true'
         uses: actions/checkout@v4
 
       - name: Get version
+        if: steps.check.outputs.skip != 'true'
         id: version
         run: |
           VERSION="${{ github.event.release.tag_name }}"
           echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
 
       - name: Download Linux artifacts from release
+        if: steps.check.outputs.skip != 'true'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           mkdir -p artifacts
@@ -221,6 +229,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Generate PKGBUILD
+        if: steps.check.outputs.skip != 'true'
         run: ./packaging/scripts/generate-aur-pkgbuild.sh
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -229,6 +238,7 @@ jobs:
           ARTIFACTS_DIR: artifacts
 
       - name: Publish to AUR
+        if: steps.check.outputs.skip != 'true'
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
         with:
           pkgname: ${{ matrix.pkgname }}
