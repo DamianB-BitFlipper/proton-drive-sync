@@ -2,7 +2,7 @@
 pkgname={{PACKAGE_NAME}}
 pkgver={{VERSION}}
 pkgrel=1
-pkgdesc='Sync local directories to Proton Drive cloud storage (prerelease)'
+pkgdesc='{{PACKAGE_DESC}}'
 arch=('x86_64' 'aarch64')
 url='https://github.com/DamianB-BitFlipper/proton-drive-sync'
 license=('GPL-3.0-only')

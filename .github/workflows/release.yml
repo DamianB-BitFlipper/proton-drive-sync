@@ -186,7 +186,18 @@ jobs:
   publish-aur:
     needs: package
     runs-on: ubuntu-latest
-    if: github.event.release.prerelease == true
+    strategy:
+      matrix:
+        include:
+          - prerelease: true
+            pkgname: proton-drive-sync-prerelease-bin
+            pkgdesc: 'Sync local directories to Proton Drive cloud storage (prerelease)'
+          - prerelease: false
+            pkgname: proton-drive-sync-bin
+            pkgdesc: 'Sync local directories to Proton Drive cloud storage'
+
+    # Only run the matrix entry that matches the release type
+    if: github.event.release.prerelease == matrix.prerelease
 
     steps:
       - name: Checkout
@@ -213,13 +224,14 @@ jobs:
         run: ./packaging/scripts/generate-aur-pkgbuild.sh
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE_NAME: proton-drive-sync-prerelease-bin
+          PACKAGE_NAME: ${{ matrix.pkgname }}
+          PACKAGE_DESC: ${{ matrix.pkgdesc }}
           ARTIFACTS_DIR: artifacts
 
       - name: Publish to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
         with:
-          pkgname: proton-drive-sync-prerelease-bin
+          pkgname: ${{ matrix.pkgname }}
           pkgbuild: ./PKGBUILD
           commit_username: ${{ vars.AUR_USERNAME }}
           commit_email: ${{ vars.AUR_EMAIL }}

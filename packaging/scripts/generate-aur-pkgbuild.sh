@@ -7,6 +7,9 @@
 #   PACKAGE_NAME  - AUR package name (e.g., "proton-drive-sync-prerelease-bin")
 #   ARTIFACTS_DIR - Directory containing the Linux tarballs
 #
+# Optional environment variables:
+#   PACKAGE_DESC  - Package description (default: "Sync local directories to Proton Drive cloud storage")
+#
 # Output: PKGBUILD file in current directory
 
 set -euo pipefail
@@ -15,6 +18,9 @@ set -euo pipefail
 : "${VERSION:?VERSION is required}"
 : "${PACKAGE_NAME:?PACKAGE_NAME is required}"
 : "${ARTIFACTS_DIR:?ARTIFACTS_DIR is required}"
+
+# Set defaults for optional variables
+PACKAGE_DESC="${PACKAGE_DESC:-Sync local directories to Proton Drive cloud storage}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE_PATH="${SCRIPT_DIR}/../aur/PKGBUILD.template"
@@ -32,6 +38,7 @@ echo "  SHA256 arm64: ${SHA256_ARM64}"
 
 # Generate PKGBUILD from template
 sed -e "s|{{PACKAGE_NAME}}|${PACKAGE_NAME}|g" \
+	-e "s|{{PACKAGE_DESC}}|${PACKAGE_DESC}|g" \
 	-e "s|{{VERSION}}|${AUR_VERSION}|g" \
 	-e "s|{{VERSION_ORIGINAL}}|${VERSION}|g" \
 	-e "s|{{SHA256_X64}}|${SHA256_X64}|g" \
