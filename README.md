@@ -6,11 +6,11 @@
   <video src="https://github.com/user-attachments/assets/bf1fccac-9a08-4da1-bc0c-2c06d510fbf1" width="400" />
 </p>
 
-<a href="https://x.com/TheBitFlipper" target="_blank">
-  <img src="https://img.shields.io/badge/Follow-@TheBitFlipper-000000?style=for-the-badge&logo=x&logoColor=white" alt="Follow on X" height="50">
-</a>
 <a href="https://www.buymeacoffee.com/thebitflipper" target="_blank">
   <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50">
+</a>
+<a href="https://x.com/TheBitFlipper" target="_blank">
+  <img src="https://img.shields.io/badge/Follow-black?style=for-the-badge&logo=x&logoColor=white" alt="Follow on X" height="50">
 </a>
 
 ## Installation
