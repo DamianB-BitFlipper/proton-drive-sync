@@ -13,7 +13,6 @@ Environment="HOME={{HOME}}"
 Environment="XDG_CONFIG_HOME={{HOME}}/.config"
 Environment="XDG_STATE_HOME={{HOME}}/.local/state"
 Environment="PATH={{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="KEYRING_PASSWORD={{KEYRING_PASSWORD}}"
 
 [Install]
 WantedBy={{WANTED_BY}}

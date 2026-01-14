@@ -2,13 +2,15 @@
  * Keychain utilities for storing and retrieving Proton credentials
  *
  * Cross-platform secure credential storage:
- * - macOS: Keychain (via keytar)
- * - Windows: Credential Manager (via keytar)
- * - Linux with KEYRING_PASSWORD: File-based encrypted storage (for headless servers)
- * - Linux without KEYRING_PASSWORD: libsecret via keytar (for desktop environments)
+ * - macOS: Keychain (via @napi-rs/keyring)
+ * - Windows: Credential Manager (via @napi-rs/keyring)
+ * - Linux: Secret Service / keyutils (via @napi-rs/keyring)
+ * - Fallback: File-based encrypted storage (only if native keyring unavailable)
  */
 
-import keytar from 'keytar';
+import { Entry } from '@napi-rs/keyring';
+import { createHash } from 'crypto';
+import { hostname, platform, arch } from 'os';
 import { logger } from './logger.js';
 import type { PasswordMode } from './auth.js';
 import {
@@ -19,23 +21,53 @@ import {
 
 const KEYCHAIN_SERVICE = 'proton-drive-sync';
 const KEYCHAIN_ACCOUNT = 'proton-drive-sync:tokens';
-const DEFAULT_KEYRING_PASSWORD = 'proton-drive-sync';
 
 /**
- * Check if we should use file-based storage.
- * On Linux, always use file-based encrypted storage (avoids libsecret/gnome-keyring complexity).
- * On macOS/Windows, use keytar (Keychain/Credential Manager).
+ * Check if native keyring is available and working.
+ * Tries to access the OS credential store and falls back to file-based storage if unavailable.
  */
-function useFileStorage(): boolean {
-  return process.platform === 'linux';
+let nativeKeychainAvailable: boolean | null = null;
+
+function isNativeKeychainAvailable(): boolean {
+  // Cache the result to avoid repeated checks
+  if (nativeKeychainAvailable !== null) {
+    return nativeKeychainAvailable;
+  }
+
+  try {
+    // Try to create a test entry to verify native keychain works
+    const testEntry = new Entry(KEYCHAIN_SERVICE, '__test_availability__');
+
+    // Try a simple operation
+    testEntry.deleteCredential();
+
+    nativeKeychainAvailable = true;
+    logger.debug('Native keychain is available');
+    return true;
+  } catch (error) {
+    logger.debug(`Native keychain not available: ${error}`);
+    logger.warn(
+      'Native keyring unavailable. Using file-based encryption. ' +
+        'For better security, ensure Secret Service (libsecret) is installed on Linux.'
+    );
+    nativeKeychainAvailable = false;
+    return false;
+  }
 }
 
 /**
- * Get the keyring password for file-based storage.
- * Uses KEYRING_PASSWORD env var if set, otherwise falls back to default.
+ * Get the keyring password for file-based storage fallback.
+ * Uses KEYRING_PASSWORD env var if set, otherwise generates a machine-specific password.
  */
 function getKeyringPassword(): string {
-  return process.env.KEYRING_PASSWORD || DEFAULT_KEYRING_PASSWORD;
+  if (process.env.KEYRING_PASSWORD) {
+    return process.env.KEYRING_PASSWORD;
+  }
+
+  // Generate a deterministic password based on machine ID
+  // This is better than a hardcoded default, though still relies on file permissions
+  const machineId = `${hostname()}-${platform()}-${arch()}`;
+  return createHash('sha256').update(machineId).digest('hex');
 }
 
 /** Tokens stored in keychain for session reuse (parent/child session model) */
@@ -61,15 +93,16 @@ export interface StoredCredentials {
 
 export async function getStoredCredentials(): Promise<StoredCredentials | null> {
   try {
-    // Linux: use file-based storage
-    if (useFileStorage()) {
-      return getCredentialsFromFile(getKeyringPassword()) as StoredCredentials | null;
+    // Try native keychain first if available
+    if (isNativeKeychainAvailable()) {
+      const entry = new Entry(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
+      const data = entry.getPassword();
+      if (!data) return null;
+      return JSON.parse(data) as StoredCredentials;
     }
 
-    // macOS/Windows/Linux desktop: use keytar
-    const data = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
-    if (!data) return null;
-    return JSON.parse(data) as StoredCredentials;
+    // Fallback to file-based storage
+    return getCredentialsFromFile(getKeyringPassword()) as StoredCredentials | null;
   } catch (error) {
     logger.debug(`Failed to get stored credentials: ${error}`);
     return null;
@@ -77,27 +110,40 @@ export async function getStoredCredentials(): Promise<StoredCredentials | null> 
 }
 
 export async function storeCredentials(credentials: StoredCredentials): Promise<void> {
-  // Linux: use file-based storage
-  if (useFileStorage()) {
-    storeCredentialsToFile(credentials, getKeyringPassword());
-    return;
+  try {
+    // Try native keychain first if available
+    if (isNativeKeychainAvailable()) {
+      const entry = new Entry(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
+      entry.setPassword(JSON.stringify(credentials));
+      logger.debug('Credentials stored in native keychain');
+      return;
+    }
+  } catch (error) {
+    logger.warn(`Failed to store credentials in native keychain: ${error}`);
+    logger.info('Falling back to file-based storage');
   }
 
-  // macOS/Windows/Linux desktop: use keytar
-  await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, JSON.stringify(credentials));
+  // Fallback to file-based storage
+  storeCredentialsToFile(credentials, getKeyringPassword());
+  logger.debug('Credentials stored in encrypted file');
 }
 
 export async function deleteStoredCredentials(): Promise<void> {
   try {
-    // Linux: use file-based storage
-    if (useFileStorage()) {
-      deleteCredentialsFile();
-      return;
+    // Try native keychain first if available
+    if (isNativeKeychainAvailable()) {
+      const entry = new Entry(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
+      entry.deleteCredential();
+      logger.debug('Credentials deleted from native keychain');
     }
+  } catch (error) {
+    logger.debug(`No credentials in native keychain to delete: ${error}`);
+  }
 
-    // macOS/Windows/Linux desktop: use keytar
-    await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
-  } catch {
-    // Ignore - may not exist
+  try {
+    // Also clean up file-based storage (in case of migration or fallback)
+    deleteCredentialsFile();
+  } catch (error) {
+    logger.debug(`No credentials file to delete: ${error}`);
   }
 }

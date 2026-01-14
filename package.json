@@ -32,12 +32,12 @@
   ],
   "dependencies": {
     "@inquirer/prompts": "^8.0.1",
+    "@napi-rs/keyring": "^1.2.0",
     "@protontech/drive-sdk": "^0.7.0",
     "bcryptjs": "^3.0.3",
     "commander": "^14.0.2",
     "drizzle-orm": "^0.45.0",
     "hono": "^4.10.7",
-    "keytar": "^7.9.0",
     "lucide-static": "^0.562.0",
     "openpgp": "^6.2.2",
     "p-retry": "^7.1.0",
