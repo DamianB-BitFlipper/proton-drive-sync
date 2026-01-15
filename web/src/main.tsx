@@ -1,0 +1,1 @@
+import React from "react";\nimport { createRoot } from "react-dom/client";\nimport App from "./ui/App";\n\ncreateRoot(document.getElementById("root")!).render(<App />);

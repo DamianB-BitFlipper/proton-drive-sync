@@ -1,0 +1,1 @@
+import React from "react";\nimport { CreateRepo } from "./CreateRepo";\n\nexport default function App() {\n  return (\n    <div style={{ padding: 20 }}>\n      <h1>E2EE Drive Git — High-Security PoC</h1>\n      <p>Zero-knowledge: repo content encrypted in browser, Drive stores only ciphertext.</p>\n      <CreateRepo />\n    </div>\n  );\n}
