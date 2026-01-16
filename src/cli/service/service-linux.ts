@@ -1,7 +1,7 @@
 /**
  * Linux systemd service implementation
  * Supports both user-level (~/.config/systemd/user/) and system-level (/etc/systemd/system/) services
- * Uses file-based encrypted credential storage (no gnome-keyring dependency)
+ * Uses native OS keyring (Secret Service/libsecret) with automatic fallback to encrypted file storage
  */
 
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
@@ -24,10 +24,6 @@ import serviceTemplate from './templates/proton-drive-sync.service' with { type:
 // ============================================================================
 
 const SERVICE_NAME = 'proton-drive-sync';
-
-// Default encryption password for file-based credential storage
-// This is stored in the systemd service file anyway, so hardcoding doesn't reduce security
-const ENCRYPTION_PASSWORD = 'proton-drive-sync';
 
 // ============================================================================
 // Path Helpers
@@ -106,7 +102,7 @@ function daemonReload(scope: InstallScope): boolean {
 // Service File Generation
 // ============================================================================
 
-function generateServiceFile(binPath: string, password: string, scope: InstallScope): string {
+function generateServiceFile(binPath: string, scope: InstallScope): string {
   const home = getEffectiveHome();
   const uid = getEffectiveUid();
 
@@ -114,7 +110,6 @@ function generateServiceFile(binPath: string, password: string, scope: InstallSc
     .replace('{{BIN_PATH}}', binPath)
     .replace(/\{\{HOME\}\}/g, home)
     .replace(/\{\{UID\}\}/g, String(uid))
-    .replace('{{KEYRING_PASSWORD}}', password)
     .replace('{{WANTED_BY}}', scope === 'system' ? 'multi-user.target' : 'default.target');
 
   if (scope === 'system') {
@@ -142,9 +137,6 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
         return false;
       }
 
-      // Use hardcoded encryption password for file-based credential storage
-      const password = ENCRYPTION_PASSWORD;
-
       // Create systemd directory if it doesn't exist
       if (!existsSync(paths.serviceDir)) {
         mkdirSync(paths.serviceDir, { recursive: true });
@@ -166,7 +158,7 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
       }
 
       // Write main service file
-      const content = generateServiceFile(binPath, password, scope);
+      const content = generateServiceFile(binPath, scope);
       writeFileSync(paths.servicePath, content);
       logger.info(`Created: ${paths.servicePath}`);
 
