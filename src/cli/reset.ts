@@ -2,7 +2,7 @@
  * Reset Command - Clear sync state from database
  */
 
-import { confirm } from '@inquirer/prompts';
+import { confirm, select } from '@inquirer/prompts';
 import { gt } from 'drizzle-orm';
 import { rmSync, existsSync } from 'fs';
 import { db, schema, run } from '../db/index.js';
@@ -12,92 +12,153 @@ import { getConfigDir, getStateDir } from '../paths.js';
 import { deleteStoredCredentials } from '../keychain.js';
 import { serviceUninstallCommand } from './service/index.js';
 
-export async function resetCommand(options: {
-  yes: boolean;
-  onlySignals: boolean;
-  onlyRetries: boolean;
-  purge: boolean;
-}): Promise<void> {
-  const { yes, onlySignals, onlyRetries, purge } = options;
+// ============================================================================
+// Main Command
+// ============================================================================
 
-  // --purge is mutually exclusive with --only-signals and --only-retries
-  if (purge && (onlySignals || onlyRetries)) {
-    logger.error('--purge cannot be used with --only-signals or --only-retries');
-    process.exit(1);
-  }
-
-  if (purge) {
-    await purgeCommand(yes);
+export async function resetCommand(options: { purge: boolean }): Promise<void> {
+  if (options.purge) {
+    await purgeCommand();
     return;
   }
 
-  if (!yes) {
-    let message: string;
-    if (onlyRetries) {
-      message =
-        'This will clear the retry delay for all pending retry jobs so they get picked up immediately. Continue?';
-    } else if (onlySignals) {
-      message = 'This will clear all signals from the database. Continue?';
-    } else {
-      message =
-        'This will reset the sync state, forcing proton-drive-sync to sync all files as if it were first launched. Continue?';
-    }
+  // Interactive mode
+  await resetInteractive();
+}
 
-    const confirmed = await confirm({
-      message,
-      default: false,
+// ============================================================================
+// Interactive Mode
+// ============================================================================
+
+/**
+ * Interactive menu for reset operations
+ */
+async function resetInteractive(): Promise<void> {
+  while (true) {
+    console.log('');
+    const action = await select({
+      message: 'What would you like to reset?',
+      choices: [
+        {
+          name: 'Reset sync state',
+          value: 'sync-state',
+          description: 'Force full resync of all files',
+        },
+        {
+          name: 'Clear retry delays',
+          value: 'retries',
+          description: 'Retry failed jobs immediately',
+        },
+        {
+          name: 'Clear signals',
+          value: 'signals',
+          description: 'Clear IPC signal queue',
+        },
+        { name: 'Done', value: 'done' },
+      ],
     });
 
-    if (!confirmed) {
-      logger.info('Aborted.');
-      return;
-    }
-  }
-
-  if (onlyRetries) {
-    const result = run(
-      db.update(schema.syncJobs).set({ retryAt: new Date() }).where(gt(schema.syncJobs.nRetries, 0))
-    );
-    logger.info(`Cleared retry delay for ${result.changes} job(s).`);
-  } else if (onlySignals) {
-    db.delete(schema.signals).run();
-    logger.info('Signals cleared.');
-  } else {
-    // Clear all sync-related tables atomically
-    db.transaction((tx) => {
-      tx.delete(schema.syncJobs).run();
-      tx.delete(schema.processingQueue).run();
-      tx.delete(schema.fileState).run();
-      tx.delete(schema.nodeMapping).run();
-    });
-
-    // Clear file state to force full resync
-    const snapshotsCleared = clearAllSnapshots();
-    if (snapshotsCleared > 0) {
-      logger.info(`Cleared ${snapshotsCleared} file state entry(ies).`);
+    if (action === 'done') {
+      break;
     }
 
-    logger.info('State reset.');
+    switch (action) {
+      case 'sync-state':
+        await resetSyncState();
+        break;
+      case 'retries':
+        await clearRetryDelays();
+        break;
+      case 'signals':
+        await clearSignals();
+        break;
+    }
   }
 }
 
-/**
- * Purge all user data, credentials, and service
- */
-async function purgeCommand(skipConfirmation: boolean): Promise<void> {
-  if (!skipConfirmation) {
-    const confirmed = await confirm({
-      message:
-        'This will completely remove all proton-drive-sync data including credentials, configuration, and sync history. This cannot be undone. Continue?',
-      default: false,
-    });
+// ============================================================================
+// Reset Actions
+// ============================================================================
 
-    if (!confirmed) {
-      logger.info('Aborted.');
-      return;
-    }
+/**
+ * Reset sync state - forces full resync of all files
+ */
+async function resetSyncState(): Promise<void> {
+  const confirmed = await confirm({
+    message:
+      'This will reset the sync state, forcing proton-drive-sync to sync all files as if it were first launched. Continue?',
+    default: false,
+  });
+
+  if (!confirmed) {
+    logger.info('Aborted.');
+    return;
   }
 
+  // Clear all sync-related tables atomically
+  db.transaction((tx) => {
+    tx.delete(schema.syncJobs).run();
+    tx.delete(schema.processingQueue).run();
+    tx.delete(schema.fileState).run();
+    tx.delete(schema.nodeMapping).run();
+  });
+
+  // Clear file state to force full resync
+  const snapshotsCleared = clearAllSnapshots();
+  if (snapshotsCleared > 0) {
+    logger.info(`Cleared ${snapshotsCleared} file state entry(ies).`);
+  }
+
+  logger.info('State reset.');
+}
+
+/**
+ * Clear retry delays - allows failed jobs to be retried immediately
+ */
+async function clearRetryDelays(): Promise<void> {
+  const confirmed = await confirm({
+    message:
+      'This will clear the retry delay for all pending retry jobs so they get picked up immediately. Continue?',
+    default: false,
+  });
+
+  if (!confirmed) {
+    logger.info('Aborted.');
+    return;
+  }
+
+  const result = run(
+    db.update(schema.syncJobs).set({ retryAt: new Date() }).where(gt(schema.syncJobs.nRetries, 0))
+  );
+  logger.info(`Cleared retry delay for ${result.changes} job(s).`);
+}
+
+/**
+ * Clear signals - clears the IPC signal queue
+ */
+async function clearSignals(): Promise<void> {
+  const confirmed = await confirm({
+    message: 'This will clear all signals from the database. Continue?',
+    default: false,
+  });
+
+  if (!confirmed) {
+    logger.info('Aborted.');
+    return;
+  }
+
+  db.delete(schema.signals).run();
+  logger.info('Signals cleared.');
+}
+
+// ============================================================================
+// Purge Command
+// ============================================================================
+
+/**
+ * Purge all user data, credentials, and service (non-interactive)
+ */
+async function purgeCommand(): Promise<void> {
   logger.info('');
   logger.info('Purging proton-drive-sync...');
   logger.info('');
