@@ -117,7 +117,8 @@ async function uploadFile(
 async function createDirectory(
   client: CreateProtonDriveClient,
   targetFolderUid: string,
-  dirName: string
+  dirName: string,
+  modificationTime?: Date
 ): Promise<string> {
   // Check if directory already exists
   const existingFolderUid = await findFolderByName(client, targetFolderUid, dirName);
@@ -125,7 +126,7 @@ async function createDirectory(
   if (existingFolderUid) {
     return existingFolderUid;
   } else {
-    const result = await client.createFolder(targetFolderUid, dirName);
+    const result = await client.createFolder(targetFolderUid, dirName, modificationTime);
     if (!result.ok || !result.value) {
       throw new Error(`Failed to create directory "${dirName}": ${result.error}`);
     }
@@ -205,7 +206,7 @@ export async function createNode(
   // Create file or directory
   try {
     if (isDirectory) {
-      const nodeUid = await createDirectory(client, targetFolderUid, name);
+      const nodeUid = await createDirectory(client, targetFolderUid, name, pathStat?.mtime);
       return { success: true, nodeUid, parentNodeUid: targetFolderUid, isDirectory: true };
     } else {
       if (!pathStat) {
