@@ -1,11 +1,13 @@
 /**
- * File Watcher (fs.watch)
+ * File Watcher (chokidar)
  *
- * Handles file change detection using Node's built-in fs.watch with
- * file_state DB table for persistence and change detection.
+ * Handles file change detection using chokidar for reliable
+ * cross-platform file system watching, including proper handling
+ * of newly created subdirectories on macOS.
  */
 
-import { watch, type FSWatcher, statSync, existsSync } from 'fs';
+import chokidar, { type FSWatcher as ChokidarWatcher } from 'chokidar';
+import { statSync, existsSync, type Stats } from 'fs';
 import { join, relative } from 'path';
 import { eq, like } from 'drizzle-orm';
 import { logger } from '../logger.js';
@@ -13,11 +15,7 @@ import { type Config, type ExcludePattern, getConfig } from '../config.js';
 import { db } from '../db/index.js';
 import { fileState } from '../db/schema.js';
 import { isPathExcluded } from './exclusions.js';
-import {
-  WATCHER_DEBOUNCE_MS,
-  RECONCILIATION_INTERVAL_MS,
-  DIRTY_PATH_DEBOUNCE_MS,
-} from './constants.js';
+import { WATCHER_DEBOUNCE_MS } from './constants.js';
 
 // ============================================================================
 // Types
@@ -38,28 +36,11 @@ export type FileChangeHandler = (file: FileChange) => void;
 export type FileChangeBatchHandler = (files: FileChange[]) => void;
 
 // ============================================================================
-// Constants
-// ============================================================================
-
-// ============================================================================
 // State
 // ============================================================================
 
-/** Track active fs.watch watchers for teardown */
-const activeWatchers: Map<string, FSWatcher> = new Map();
-
-/** Track paths with recent events for incremental reconciliation (path -> timestamp when first marked dirty) */
-const dirtyPaths: Map<string, number> = new Map();
-
-/** Debounce timers per path */
-const debounceTimers: Map<string, Timer> = new Map();
-
-/** Reconciliation timer */
-let reconciliationTimer: Timer | null = null;
-
-/** Stored references for reconciliation callback */
-let reconciliationConfig: Config | null = null;
-let reconciliationCallback: FileChangeBatchHandler | null = null;
+/** Track active chokidar watchers for teardown */
+const activeWatchers: Map<string, ChokidarWatcher> = new Map();
 
 // ============================================================================
 // Change Token Helpers
@@ -83,7 +64,7 @@ function getStoredChangeToken(localPath: string): string | null {
 /**
  * Get all stored change tokens under a sync directory
  */
-function getAllStoredChangeTokens(syncDirPath: string): Map<string, string> {
+export function getAllStoredChangeTokens(syncDirPath: string): Map<string, string> {
   const pathPrefix = syncDirPath.endsWith('/') ? syncDirPath : `${syncDirPath}/`;
   const results = db
     .select()
@@ -105,10 +86,12 @@ function getAllStoredChangeTokens(syncDirPath: string): Map<string, string> {
 /**
  * Scan a directory recursively and return all files/directories with their stats.
  * Filters out paths matching exclusion patterns.
+ * @param throttleMs - Optional delay between each file stat (for background reconciliation)
  */
 export async function scanDirectory(
   watchDir: string,
-  excludePatterns: ExcludePattern[]
+  excludePatterns: ExcludePattern[],
+  throttleMs?: number
 ): Promise<Map<string, { size: number; mtime_ms: number; isDirectory: boolean; ino: number }>> {
   const results = new Map<
     string,
@@ -121,6 +104,11 @@ export async function scanDirectory(
     const entries = glob.scanSync({ cwd: watchDir, dot: true, onlyFiles: false });
 
     for (const entry of entries) {
+      // Throttle if specified (for background reconciliation)
+      if (throttleMs && throttleMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, throttleMs));
+      }
+
       const fullPath = join(watchDir, entry);
 
       // Skip excluded paths
@@ -153,7 +141,7 @@ export async function scanDirectory(
 /**
  * Compare filesystem state against stored change tokens and generate changes
  */
-function compareWithStoredChangeTokens(
+export function compareWithStoredChangeTokens(
   watchDir: string,
   fsState: Map<string, { size: number; mtime_ms: number; isDirectory: boolean; ino: number }>,
   storedTokens: Map<string, string>
@@ -218,10 +206,10 @@ function compareWithStoredChangeTokens(
 // ============================================================================
 
 /**
- * Initialize the watcher (no-op for fs.watch - no daemon needed)
+ * Initialize the watcher (no-op for chokidar - no daemon needed)
  */
 export async function initializeWatcher(): Promise<void> {
-  logger.debug('File watcher initialized');
+  logger.debug('File watcher initialized (chokidar)');
 }
 
 /**
@@ -291,74 +279,141 @@ export async function queryAllChanges(
 }
 
 // ============================================================================
-// Live Watching (fs.watch)
+// Chokidar Event Handlers
 // ============================================================================
 
 /**
- * Handle a debounced file system event
+ * Handle file add event
  */
-function handleDebouncedEvent(
+function handleFileAdd(
   watchDir: string,
-  filename: string,
-  onFileChangeBatch: FileChangeBatchHandler
+  fullPath: string,
+  stats: Stats,
+  callback: FileChangeBatchHandler
 ): void {
-  const fullPath = join(watchDir, filename);
-  const relativePath = filename;
-
-  // Add to dirty paths for incremental reconciliation (only if not already tracked)
-  if (!dirtyPaths.has(fullPath)) {
-    dirtyPaths.set(fullPath, Date.now());
-  }
-
-  try {
-    if (existsSync(fullPath)) {
-      // File exists - it's either a create or update
-      const stats = statSync(fullPath);
-      const currentToken = buildChangeToken(stats.mtimeMs, stats.size);
-      const storedToken = getStoredChangeToken(fullPath);
-
-      const isNew = !storedToken;
-      const isChanged = storedToken && storedToken !== currentToken;
-
-      // Skip if file hasn't actually changed
-      if (!isNew && !isChanged) {
-        logger.debug(`[watcher] no change detected: ${filename}`);
-        return;
-      }
-
-      const change: FileChange = {
-        name: relativePath,
-        size: stats.size,
-        mtime_ms: stats.mtimeMs,
-        exists: true,
-        type: stats.isDirectory() ? 'd' : 'f',
-        new: isNew,
-        watchRoot: watchDir,
-        ino: stats.ino,
-      };
-
-      onFileChangeBatch([change]);
-    } else {
-      // File doesn't exist - it's a delete
-      const change: FileChange = {
-        name: relativePath,
-        size: 0,
-        mtime_ms: Date.now(),
-        exists: false,
-        type: 'f', // Default to file
-        new: false,
-        watchRoot: watchDir,
-        ino: 0,
-      };
-
-      onFileChangeBatch([change]);
-    }
-  } catch (err) {
-    logger.debug(
-      `[watcher] Error handling event for ${fullPath}: ${err instanceof Error ? err.message : String(err)}`
-    );
-  }
+  const relativePath = relative(watchDir, fullPath);
+  callback([
+    {
+      name: relativePath,
+      size: stats.size,
+      mtime_ms: stats.mtimeMs,
+      exists: true,
+      type: 'f',
+      new: true,
+      watchRoot: watchDir,
+      ino: stats.ino,
+    },
+  ]);
 }
+
+/**
+ * Handle directory add event
+ */
+function handleDirAdd(
+  watchDir: string,
+  fullPath: string,
+  stats: Stats,
+  callback: FileChangeBatchHandler
+): void {
+  const relativePath = relative(watchDir, fullPath);
+  callback([
+    {
+      name: relativePath,
+      size: stats.size,
+      mtime_ms: stats.mtimeMs,
+      exists: true,
+      type: 'd',
+      new: true,
+      watchRoot: watchDir,
+      ino: stats.ino,
+    },
+  ]);
+}
+
+/**
+ * Handle file change event
+ */
+function handleFileChange(
+  watchDir: string,
+  fullPath: string,
+  stats: Stats,
+  callback: FileChangeBatchHandler
+): void {
+  const relativePath = relative(watchDir, fullPath);
+
+  // Check if file actually changed using change token
+  const currentToken = buildChangeToken(stats.mtimeMs, stats.size);
+  const storedToken = getStoredChangeToken(fullPath);
+
+  // If token matches, skip (no actual change)
+  if (storedToken === currentToken) {
+    logger.debug(`[watcher] no change detected: ${relativePath}`);
+    return;
+  }
+
+  callback([
+    {
+      name: relativePath,
+      size: stats.size,
+      mtime_ms: stats.mtimeMs,
+      exists: true,
+      type: 'f',
+      new: false,
+      watchRoot: watchDir,
+      ino: stats.ino,
+    },
+  ]);
+}
+
+/**
+ * Handle file unlink (delete) event
+ */
+function handleFileUnlink(
+  watchDir: string,
+  fullPath: string,
+  callback: FileChangeBatchHandler
+): void {
+  const relativePath = relative(watchDir, fullPath);
+  callback([
+    {
+      name: relativePath,
+      size: 0,
+      mtime_ms: Date.now(),
+      exists: false,
+      type: 'f',
+      new: false,
+      watchRoot: watchDir,
+      ino: 0,
+    },
+  ]);
+}
+
+/**
+ * Handle directory unlink (delete) event
+ */
+function handleDirUnlink(
+  watchDir: string,
+  fullPath: string,
+  callback: FileChangeBatchHandler
+): void {
+  const relativePath = relative(watchDir, fullPath);
+  callback([
+    {
+      name: relativePath,
+      size: 0,
+      mtime_ms: Date.now(),
+      exists: false,
+      type: 'd',
+      new: false,
+      watchRoot: watchDir,
+      ino: 0,
+    },
+  ]);
+}
+
+// ============================================================================
+// Live Watching (chokidar)
+// ============================================================================
 
 /**
  * Set up watch subscriptions for all configured directories.
@@ -371,9 +426,7 @@ export async function setupWatchSubscriptions(
   // Clear any existing subscriptions first
   await teardownWatchSubscriptions();
 
-  // Store references for reconciliation
-  reconciliationConfig = config;
-  reconciliationCallback = onFileChangeBatch;
+  const excludePatterns = getConfig().exclude_patterns;
 
   // Set up watches for all configured directories
   for (const dir of config.sync_dirs) {
@@ -385,30 +438,47 @@ export async function setupWatchSubscriptions(
     }
 
     try {
-      const fsWatcher = watch(watchDir, { recursive: true }, (eventType, filename) => {
-        if (!filename) return;
-
-        // Clear existing debounce timer for this path
-        const timerKey = `${watchDir}:${filename}`;
-        const existingTimer = debounceTimers.get(timerKey);
-        if (existingTimer) {
-          clearTimeout(existingTimer);
-        }
-
-        // Set new debounce timer
-        const timer = setTimeout(() => {
-          debounceTimers.delete(timerKey);
-          handleDebouncedEvent(watchDir, filename, onFileChangeBatch);
-        }, WATCHER_DEBOUNCE_MS);
-
-        debounceTimers.set(timerKey, timer);
+      const watcher = chokidar.watch(watchDir, {
+        persistent: true,
+        ignoreInitial: true, // Don't emit events for existing files
+        alwaysStat: true, // Get stats with events (avoid extra statSync calls)
+        awaitWriteFinish: {
+          stabilityThreshold: WATCHER_DEBOUNCE_MS,
+          pollInterval: 100,
+        },
+        // Use closure to capture watchDir and excludePatterns for exclusion check
+        ignored: (path: string) => isPathExcluded(path, watchDir, excludePatterns),
       });
 
-      fsWatcher.on('error', (err) => {
-        logger.error(`Watcher error for ${watchDir}: ${err.message}`);
-      });
+      watcher
+        .on('add', (path, stats) => {
+          if (stats) handleFileAdd(watchDir, path, stats, onFileChangeBatch);
+        })
+        .on('addDir', (path, stats) => {
+          // Skip the root directory itself
+          if (path === watchDir) return;
+          if (stats) handleDirAdd(watchDir, path, stats, onFileChangeBatch);
+        })
+        .on('change', (path, stats) => {
+          if (stats) handleFileChange(watchDir, path, stats, onFileChangeBatch);
+        })
+        .on('unlink', (path) => {
+          handleFileUnlink(watchDir, path, onFileChangeBatch);
+        })
+        .on('unlinkDir', (path) => {
+          // Skip the root directory itself
+          if (path === watchDir) return;
+          handleDirUnlink(watchDir, path, onFileChangeBatch);
+        })
+        .on('error', (err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          logger.error(`Watcher error for ${watchDir}: ${message}`);
+        })
+        .on('ready', () => {
+          logger.debug(`Watcher ready for ${watchDir}`);
+        });
 
-      activeWatchers.set(watchDir, fsWatcher);
+      activeWatchers.set(watchDir, watcher);
       logger.info(`Watching ${dir.source_path} for changes...`);
     } catch (err) {
       logger.error(
@@ -416,9 +486,6 @@ export async function setupWatchSubscriptions(
       );
     }
   }
-
-  // Start incremental reconciliation timer
-  startReconciliationTimer();
 
   logger.info('Watching for file changes... (press Ctrl+C to exit)');
 }
@@ -428,23 +495,13 @@ export async function setupWatchSubscriptions(
  * Call this before re-setting up subscriptions on config change.
  */
 export async function teardownWatchSubscriptions(): Promise<void> {
-  // Stop reconciliation timer
-  stopReconciliationTimer();
-
-  // Clear debounce timers
-  for (const timer of debounceTimers.values()) {
-    clearTimeout(timer);
-  }
-  debounceTimers.clear();
-
-  // Close all watchers
   if (activeWatchers.size === 0) return;
 
   logger.info('Tearing down watch subscriptions...');
 
-  for (const [watchDir, fsWatcher] of activeWatchers) {
+  for (const [watchDir, watcher] of activeWatchers) {
     try {
-      fsWatcher.close();
+      await watcher.close();
       logger.debug(`Closed watcher for ${watchDir}`);
     } catch (err) {
       logger.warn(`Failed to close watcher for ${watchDir}: ${(err as Error).message}`);
@@ -452,154 +509,6 @@ export async function teardownWatchSubscriptions(): Promise<void> {
   }
 
   activeWatchers.clear();
-  dirtyPaths.clear();
-
-  // Clear reconciliation references
-  reconciliationConfig = null;
-  reconciliationCallback = null;
-}
-
-// ============================================================================
-// Incremental Reconciliation
-// ============================================================================
-
-/**
- * Start the incremental reconciliation timer
- */
-function startReconciliationTimer(): void {
-  if (reconciliationTimer) return;
-
-  reconciliationTimer = setInterval(() => {
-    runIncrementalReconciliation();
-  }, RECONCILIATION_INTERVAL_MS);
-}
-
-/**
- * Stop the reconciliation timer
- */
-function stopReconciliationTimer(): void {
-  if (reconciliationTimer) {
-    clearInterval(reconciliationTimer);
-    reconciliationTimer = null;
-  }
-}
-
-/**
- * Run incremental reconciliation on dirty paths only
- */
-function runIncrementalReconciliation(): void {
-  if (dirtyPaths.size === 0) {
-    logger.debug('[reconcile] No dirty paths to reconcile');
-    return;
-  }
-
-  if (!reconciliationCallback || !reconciliationConfig) {
-    logger.debug('[reconcile] No reconciliation callback configured');
-    return;
-  }
-
-  // Filter to paths that have been dirty for at least DIRTY_PATH_DEBOUNCE_MS
-  const now = Date.now();
-  const eligiblePaths: string[] = [];
-  for (const [fullPath, timestamp] of dirtyPaths) {
-    if (now - timestamp >= DIRTY_PATH_DEBOUNCE_MS) {
-      eligiblePaths.push(fullPath);
-    }
-  }
-
-  if (eligiblePaths.length === 0) {
-    logger.debug(
-      `[reconcile] ${dirtyPaths.size} dirty paths not yet eligible (debouncing for ${DIRTY_PATH_DEBOUNCE_MS / 1000}s)`
-    );
-    return;
-  }
-
-  logger.debug(`[reconcile] Running incremental reconciliation on ${eligiblePaths.length} paths`);
-
-  const changes: FileChange[] = [];
-
-  // Group dirty paths by watch root
-  const pathsByRoot = new Map<string, string[]>();
-  for (const fullPath of eligiblePaths) {
-    const watchDir = reconciliationConfig.sync_dirs.find((d) =>
-      fullPath.startsWith(d.source_path)
-    )?.source_path;
-
-    if (watchDir) {
-      const paths = pathsByRoot.get(watchDir) || [];
-      paths.push(fullPath);
-      pathsByRoot.set(watchDir, paths);
-    }
-  }
-
-  // Check each dirty path
-  for (const [watchDir, paths] of pathsByRoot) {
-    for (const fullPath of paths) {
-      const relativePath = relative(watchDir, fullPath);
-      const storedToken = getStoredChangeToken(fullPath);
-
-      try {
-        if (existsSync(fullPath)) {
-          const stats = statSync(fullPath);
-          const currentToken = buildChangeToken(stats.mtimeMs, stats.size);
-
-          // Check if there's a discrepancy
-          if (!storedToken) {
-            // File exists but no change token stored - should have been created
-            changes.push({
-              name: relativePath,
-              size: stats.size,
-              mtime_ms: stats.mtimeMs,
-              exists: true,
-              type: stats.isDirectory() ? 'd' : 'f',
-              new: true,
-              watchRoot: watchDir,
-              ino: stats.ino,
-            });
-          } else if (storedToken !== currentToken && !stats.isDirectory()) {
-            // Token mismatch - should have been updated
-            changes.push({
-              name: relativePath,
-              size: stats.size,
-              mtime_ms: stats.mtimeMs,
-              exists: true,
-              type: 'f',
-              new: false,
-              watchRoot: watchDir,
-              ino: stats.ino,
-            });
-          }
-        } else if (storedToken) {
-          // File doesn't exist but change token is stored - should have been deleted
-          changes.push({
-            name: relativePath,
-            size: 0,
-            mtime_ms: Date.now(),
-            exists: false,
-            type: 'f',
-            new: false,
-            watchRoot: watchDir,
-            ino: 0,
-          });
-        }
-      } catch (err) {
-        logger.debug(
-          `[reconcile] Error checking ${fullPath}: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
-    }
-  }
-
-  // Clear only the paths that were checked (eligible paths)
-  for (const fullPath of eligiblePaths) {
-    dirtyPaths.delete(fullPath);
-  }
-
-  // Emit any missed changes
-  if (changes.length > 0) {
-    logger.info(`[reconcile] Found ${changes.length} missed changes`);
-    reconciliationCallback(changes);
-  }
 }
 
 // ============================================================================

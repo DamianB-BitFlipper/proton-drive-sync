@@ -5,6 +5,7 @@
  */
 
 import { join } from 'path';
+import { existsSync } from 'fs';
 import { db } from '../db/index.js';
 import { SyncEventType } from '../db/schema.js';
 import { logger } from '../logger.js';
@@ -21,9 +22,12 @@ import {
   queryAllChanges,
   setupWatchSubscriptions,
   triggerFullReconciliation,
+  scanDirectory,
+  getAllStoredChangeTokens,
+  compareWithStoredChangeTokens,
   type FileChange,
 } from './watcher.js';
-import { enqueueJob, cleanupOrphanedJobs } from './queue.js';
+import { enqueueJob, cleanupOrphanedJobs, getPendingJobCount } from './queue.js';
 import {
   processAvailableJobs,
   waitForActiveTasks,
@@ -44,7 +48,13 @@ import {
   cleanupOrphanedNodeMappings,
 } from './nodes.js';
 import { isPathExcluded } from './exclusions.js';
-import { JOB_POLL_INTERVAL_MS, SHUTDOWN_TIMEOUT_MS } from './constants.js';
+import {
+  JOB_POLL_INTERVAL_MS,
+  SHUTDOWN_TIMEOUT_MS,
+  BACKGROUND_RECONCILIATION_INTERVAL_MS,
+  BACKGROUND_RECONCILIATION_THROTTLE_MS,
+  BACKGROUND_RECONCILIATION_SKIP_THRESHOLD,
+} from './constants.js';
 
 // ============================================================================
 // Types
@@ -335,6 +345,9 @@ export async function runWatchMode(options: SyncOptions): Promise<void> {
   // Start the job processor loop
   const processorHandle = startJobProcessorLoop(client, dryRun);
 
+  // Start background reconciliation (safety net for missed watcher events)
+  const reconciliationHandle = startBackgroundReconciliation(dryRun, createChangeHandler());
+
   // Register reconcile signal handler
   const handleReconcile = async (): Promise<void> => {
     logger.info('Reconcile signal received, starting full filesystem scan...');
@@ -360,7 +373,96 @@ export async function runWatchMode(options: SyncOptions): Promise<void> {
   });
 
   // Cleanup
+  reconciliationHandle.stop();
   await processorHandle.stop();
+}
+
+// ============================================================================
+// Background Reconciliation
+// ============================================================================
+
+interface BackgroundReconciliationHandle {
+  stop: () => void;
+}
+
+/**
+ * Start background reconciliation that runs periodically.
+ * Slowly walks the filesystem to catch any missed watcher events.
+ */
+function startBackgroundReconciliation(
+  dryRun: boolean,
+  onFileChangeBatch: (files: FileChange[]) => void
+): BackgroundReconciliationHandle {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let running = true;
+
+  const runReconciliation = async (): Promise<void> => {
+    if (!running) return;
+
+    // Skip if queue is busy
+    const pendingJobs = getPendingJobCount();
+    if (pendingJobs > BACKGROUND_RECONCILIATION_SKIP_THRESHOLD) {
+      logger.debug(
+        `Skipping background reconciliation: ${pendingJobs} jobs pending (threshold: ${BACKGROUND_RECONCILIATION_SKIP_THRESHOLD})`
+      );
+      if (running) {
+        timeoutId = setTimeout(runReconciliation, BACKGROUND_RECONCILIATION_INTERVAL_MS);
+      }
+      return;
+    }
+
+    logger.debug('Starting background reconciliation...');
+    let totalChanges = 0;
+    const currentConfig = getConfig();
+    const excludePatterns = currentConfig.exclude_patterns;
+
+    for (const dir of currentConfig.sync_dirs) {
+      if (!running) break;
+
+      const watchDir = dir.source_path;
+      if (!existsSync(watchDir)) continue;
+
+      // Use throttled scan to minimize CPU/memory impact
+      const fsState = await scanDirectory(
+        watchDir,
+        excludePatterns,
+        BACKGROUND_RECONCILIATION_THROTTLE_MS
+      );
+
+      const storedTokens = getAllStoredChangeTokens(watchDir);
+      const changes = compareWithStoredChangeTokens(watchDir, fsState, storedTokens);
+
+      if (changes.length > 0) {
+        for (const change of changes) {
+          logger.debug(
+            `[reconcile] Found missed change: ${change.name} (${change.exists ? 'exists' : 'deleted'})`
+          );
+        }
+        onFileChangeBatch(changes);
+        totalChanges += changes.length;
+      }
+    }
+
+    logger.debug(`Background reconciliation complete: ${totalChanges} changes found`);
+
+    // Schedule next run
+    if (running) {
+      timeoutId = setTimeout(runReconciliation, BACKGROUND_RECONCILIATION_INTERVAL_MS);
+    }
+  };
+
+  // Schedule first run after interval (not immediately on startup)
+  timeoutId = setTimeout(runReconciliation, BACKGROUND_RECONCILIATION_INTERVAL_MS);
+
+  return {
+    stop: () => {
+      running = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    },
+  };
 }
 
 // ============================================================================

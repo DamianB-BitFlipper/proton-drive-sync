@@ -109,9 +109,6 @@ configCmd
 program
   .command('reset')
   .description('Reset sync state')
-  .option('-y, --yes', 'Skip confirmation prompt')
-  .option('--only-signals', 'Clear only the signals table')
-  .option('--only-retries', 'Remove only sync jobs pending retry')
   .option('--purge', 'Delete all data, credentials, and uninstall service')
   .action(resetCommand);
 

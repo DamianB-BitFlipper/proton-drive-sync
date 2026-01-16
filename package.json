@@ -1,6 +1,6 @@
 {
   "name": "proton-drive-sync",
-  "version": "0.2.3-alpha.1",
+  "version": "0.2.3-beta.1",
   "description": "Sync local files to Proton Drive",
   "type": "module",
   "bin": {
@@ -35,6 +35,7 @@
     "@napi-rs/keyring": "^1.2.0",
     "@protontech/drive-sdk": "^0.7.0",
     "bcryptjs": "^3.0.3",
+    "chokidar": "^5.0.0",
     "commander": "^14.0.2",
     "drizzle-orm": "^0.45.0",
     "hono": "^4.10.7",

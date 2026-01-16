@@ -569,6 +569,19 @@ export function scheduleRetry(
 // ============================================================================
 
 /**
+ * Get count of pending jobs in the queue (regardless of retryAt).
+ * Used by background reconciliation to decide whether to skip.
+ */
+export function getPendingJobCount(): number {
+  const result = db
+    .select({ count: sql<number>`count(*)` })
+    .from(schema.syncJobs)
+    .where(eq(schema.syncJobs.status, SyncJobStatus.PENDING))
+    .get();
+  return result?.count ?? 0;
+}
+
+/**
  * Get counts of jobs by status.
  * Uses conditional aggregation for efficient single-query counting.
  */

@@ -17,14 +17,17 @@ export const SHUTDOWN_TIMEOUT_MS = 2_000;
 /** Time after which a PROCESSING job is considered stale (10 minutes) */
 export const STALE_PROCESSING_MS = 10 * 60 * 1000;
 
-/** Debounce time for file watcher events (200ms) */
+/** Debounce time for file watcher events (200ms) - used for awaitWriteFinish stabilityThreshold */
 export const WATCHER_DEBOUNCE_MS = 200;
 
-/** Interval for running incremental reconciliation checks (1 minute) */
-export const RECONCILIATION_INTERVAL_MS = 1 * 60 * 1000;
+/** Interval for background reconciliation (30 minutes) */
+export const BACKGROUND_RECONCILIATION_INTERVAL_MS = 30 * 60 * 1000;
 
-/** Time a dirty path must wait before being eligible for reconciliation (5 minutes) */
-export const DIRTY_PATH_DEBOUNCE_MS = 5 * 60 * 1000;
+/** Delay between file stats during background reconciliation (~50 files/sec) */
+export const BACKGROUND_RECONCILIATION_THROTTLE_MS = 20;
+
+/** Skip background reconciliation if pending jobs exceed this threshold */
+export const BACKGROUND_RECONCILIATION_SKIP_THRESHOLD = 100;
 
 // ============================================================================
 // Retry Configuration

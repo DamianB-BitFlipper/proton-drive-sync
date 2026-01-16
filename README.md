@@ -12,7 +12,7 @@
 
 ## Installation
 
-### macOS (Homebrew)
+### macOS
 
 ```bash
 brew tap DamianB-BitFlipper/tap
@@ -24,8 +24,7 @@ proton-drive-sync setup
 
 ### Linux
 
-<details>
-<summary>Debian / Ubuntu</summary>
+#### Debian / Ubuntu
 
 ```bash
 # Add repository
@@ -38,10 +37,7 @@ sudo apt install proton-drive-sync
 proton-drive-sync setup
 ```
 
-</details>
-
-<details>
-<summary>Fedora / RHEL / CentOS</summary>
+#### Fedora / RHEL / CentOS
 
 ```bash
 # Add repository
@@ -55,6 +51,17 @@ EOF
 
 # Install
 sudo dnf install proton-drive-sync
+
+proton-drive-sync setup
+```
+
+<details>
+<summary>Homebrew (Linux)</summary>
+
+```bash
+brew tap DamianB-BitFlipper/tap
+brew update
+brew install proton-drive-sync
 
 proton-drive-sync setup
 ```
@@ -126,15 +133,17 @@ proton-drive-sync setup
 
 </details>
 
+### Coming Soon
+
 <details>
-<summary>Windows (alpha)</summary>
+<summary>Windows</summary>
 
 Download the `.zip` from [GitHub Releases](https://github.com/DamianB-BitFlipper/proton-drive-sync/releases/latest), extract, and add to your PATH.
 
 </details>
 
 <details>
-<summary>Docker (WIP)</summary>
+<summary>Docker</summary>
 
 See **[DOCKER_SETUP.md](DOCKER_SETUP.md)** for running with Docker Compose on Linux x86_64 and ARM64.
 
@@ -144,6 +153,83 @@ cp .env.example .env
 # Edit .env with KEYRING_PASSWORD and sync directory paths
 docker compose up -d
 docker exec -it proton-drive-sync proton-drive-sync auth
+```
+
+</details>
+
+### Installing Pre-release Versions
+
+<details>
+<summary>Pre-release packages</summary>
+
+Pre-release packages (`proton-drive-sync-prerelease`) allow you to test upcoming features before stable release. They conflict with the stable package, so only one can be installed at a time.
+
+#### macOS
+
+```bash
+brew tap DamianB-BitFlipper/tap
+brew install proton-drive-sync-prerelease
+```
+
+#### Debian / Ubuntu
+
+```bash
+# Add repository (if not already added)
+echo "deb [trusted=yes] https://repo.damianb.dev/apt/ * *" | sudo tee /etc/apt/sources.list.d/proton-drive-sync.list
+sudo apt update
+
+# Install prerelease
+sudo apt install proton-drive-sync-prerelease
+```
+
+#### Fedora / RHEL / CentOS
+
+```bash
+# Add repository (if not already added)
+sudo tee /etc/yum.repos.d/proton-drive-sync.repo << 'EOF'
+[proton-drive-sync]
+name=Proton Drive Sync
+baseurl=https://repo.damianb.dev/yum/
+enabled=1
+gpgcheck=0
+EOF
+
+# Install prerelease
+sudo dnf install proton-drive-sync-prerelease
+```
+
+#### Arch Linux (AUR)
+
+On Arch Linux and derivatives, install from the [AUR package](https://aur.archlinux.org/packages/proton-drive-sync-prerelease-bin):
+
+```bash
+# Install via yay
+yay -S proton-drive-sync-prerelease-bin
+
+# Install via paru
+paru -S proton-drive-sync-prerelease-bin
+```
+
+#### Manual Installation
+
+Download the pre-release tarball for your platform from [GitHub Releases](https://github.com/DamianB-BitFlipper/proton-drive-sync/releases) and extract it:
+
+```bash
+# Example for macOS arm64
+tar -xzf proton-drive-sync-darwin-arm64.tar.gz
+sudo mv proton-drive-sync /usr/local/bin/
+```
+
+#### Switching Between Stable and Pre-release
+
+The packages conflict with each other, so installing one will automatically remove the other:
+
+```bash
+# Switch to prerelease
+sudo apt install proton-drive-sync-prerelease
+
+# Switch back to stable
+sudo apt install proton-drive-sync
 ```
 
 </details>
