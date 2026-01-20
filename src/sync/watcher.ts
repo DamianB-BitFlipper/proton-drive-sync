@@ -438,10 +438,13 @@ export async function setupWatchSubscriptions(
     }
 
     try {
+      const watcherConfig = config.watcher;
       const watcher = chokidar.watch(watchDir, {
         persistent: true,
         ignoreInitial: true, // Don't emit events for existing files
         alwaysStat: true, // Get stats with events (avoid extra statSync calls)
+        usePolling: watcherConfig.use_polling,
+        interval: watcherConfig.polling_interval,
         awaitWriteFinish: {
           stabilityThreshold: WATCHER_DEBOUNCE_MS,
           pollInterval: 100,
