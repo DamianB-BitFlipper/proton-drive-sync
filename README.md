@@ -120,6 +120,25 @@ flatpak run io.github.damianbbitflipper.ProtonDriveSync setup
 
 </details>
 
+#### Headless / NAS (systemd without desktop keyring)
+
+When running as a systemd service before any user login (e.g., on a NAS), you can skip
+Secret Service/gnome-keyring and force encrypted file-based credential storage:
+
+```bash
+proton-drive-sync service install --install-scope system --keychain-backend file
+```
+
+You can also set an environment variable instead of the flag if you manage the unit file
+yourself:
+
+```bash
+KEYCHAIN_BACKEND=file proton-drive-sync start --no-daemon
+```
+
+For the file backend, optionally set `KEYRING_PASSWORD` to your own secret; otherwise a
+machine fingerprint is used.
+
 <details>
 <summary>Tarball (manual)</summary>
 

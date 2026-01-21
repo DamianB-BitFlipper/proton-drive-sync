@@ -8,7 +8,7 @@ import { join } from 'path';
 import { setFlag, clearFlag, FLAGS } from '../../flags.js';
 import { logger } from '../../logger.js';
 import { getEffectiveHome, chownToEffectiveUser } from '../../paths.js';
-import type { ServiceOperations, ServiceResult } from './types.js';
+import type { ServiceOperations, ServiceResult, ServiceInstallOptions } from './types.js';
 // @ts-expect-error Bun text imports
 import plistTemplate from './templates/proton-drive-sync.plist' with { type: 'text' };
 
@@ -96,7 +96,7 @@ function unloadServiceInternal(name: string, plistPath: string): ServiceResult {
 }
 
 export const macosService: ServiceOperations = {
-  async install(binPath: string): Promise<boolean> {
+  async install(binPath: string, _options?: ServiceInstallOptions): Promise<boolean> {
     // Create LaunchAgents directory if it doesn't exist
     if (!existsSync(PLIST_DIR)) {
       mkdirSync(PLIST_DIR, { recursive: true });

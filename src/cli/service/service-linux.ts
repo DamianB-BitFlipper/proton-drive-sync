@@ -15,7 +15,12 @@ import {
   getEffectiveUid,
   chownToEffectiveUser,
 } from '../../paths.js';
-import type { ServiceOperations, InstallScope } from './types.js';
+import type {
+  ServiceOperations,
+  InstallScope,
+  ServiceInstallOptions,
+  KeychainBackend,
+} from './types.js';
 // @ts-expect-error Bun text imports
 import serviceTemplate from './templates/proton-drive-sync.service' with { type: 'text' };
 
@@ -102,14 +107,30 @@ function daemonReload(scope: InstallScope): boolean {
 // Service File Generation
 // ============================================================================
 
-function generateServiceFile(binPath: string, scope: InstallScope): string {
+function buildKeychainEnv(options?: ServiceInstallOptions): string {
+  const backend = options?.keychainBackend;
+  if (!backend || backend === 'auto') {
+    return '';
+  }
+
+  const value: KeychainBackend = backend === 'file' ? 'file' : 'native';
+  return value;
+}
+
+function generateServiceFile(
+  binPath: string,
+  scope: InstallScope,
+  options?: ServiceInstallOptions
+): string {
   const home = getEffectiveHome();
   const uid = getEffectiveUid();
+  const keychainBackendValue = buildKeychainEnv(options);
 
   let content = serviceTemplate
     .replace('{{BIN_PATH}}', binPath)
     .replace(/\{\{HOME\}\}/g, home)
     .replace(/\{\{UID\}\}/g, String(uid))
+    .replace('{{KEYCHAIN_BACKEND}}', keychainBackendValue)
     .replace('{{WANTED_BY}}', scope === 'system' ? 'multi-user.target' : 'default.target');
 
   if (scope === 'system') {
@@ -130,7 +151,7 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
   const paths = getPaths(scope);
 
   return {
-    async install(binPath: string): Promise<boolean> {
+    async install(binPath: string, options?: ServiceInstallOptions): Promise<boolean> {
       // System scope requires root
       if (scope === 'system' && !isRunningAsRoot()) {
         logger.error('System scope requires running with sudo');
@@ -158,7 +179,7 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
       }
 
       // Write main service file
-      const content = generateServiceFile(binPath, scope);
+      const content = generateServiceFile(binPath, scope, options);
       writeFileSync(paths.servicePath, content);
       logger.info(`Created: ${paths.servicePath}`);
 

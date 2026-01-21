@@ -22,11 +22,67 @@ import {
 const KEYCHAIN_SERVICE = 'proton-drive-sync';
 const KEYCHAIN_ACCOUNT = 'proton-drive-sync:tokens';
 
+import { KeychainBackends } from './keychain-backends.js';
+import type { KeychainBackend } from './keychain-backends.js';
+
 /**
  * Check if native keyring is available and working.
  * Tries to access the OS credential store and falls back to file-based storage if unavailable.
  */
 let nativeKeychainAvailable: boolean | null = null;
+let backendNoticeLogged = false;
+
+function parseKeychainBackend(raw?: string): KeychainBackend {
+  const value = raw?.toLowerCase();
+  if (
+    value === KeychainBackends.NATIVE ||
+    value === KeychainBackends.FILE ||
+    value === KeychainBackends.AUTO
+  ) {
+    return value as KeychainBackend;
+  }
+
+  if (raw) {
+    logger.warn(`Ignoring invalid KEYCHAIN_BACKEND value: ${raw} (using ${KeychainBackends.AUTO})`);
+  }
+
+  return KeychainBackends.AUTO;
+}
+
+const keychainBackend: KeychainBackend = parseKeychainBackend(process.env.KEYCHAIN_BACKEND);
+
+function shouldUseNativeKeychain(): boolean {
+  if (keychainBackend === KeychainBackends.FILE) {
+    if (!backendNoticeLogged) {
+      logger.info(
+        `Using file-based credential storage (KEYCHAIN_BACKEND=${KeychainBackends.FILE}).`
+      );
+      backendNoticeLogged = true;
+    }
+    nativeKeychainAvailable = false;
+    return false;
+  }
+
+  const available = isNativeKeychainAvailable();
+
+  if (!backendNoticeLogged && keychainBackend === KeychainBackends.NATIVE && !available) {
+    logger.warn(
+      `KEYCHAIN_BACKEND=${KeychainBackends.NATIVE} requested, but native keyring is unavailable. Using encrypted file storage instead.`
+    );
+    backendNoticeLogged = true;
+  }
+
+  if (!backendNoticeLogged && available) {
+    logger.debug(
+      keychainBackend === KeychainBackends.NATIVE
+        ? `Using native keychain (KEYCHAIN_BACKEND=${KeychainBackends.NATIVE}).`
+        : 'Using native keychain (auto-detected).'
+    );
+    backendNoticeLogged = true;
+  }
+
+  return available;
+}
 
 function isNativeKeychainAvailable(): boolean {
   // Cache the result to avoid repeated checks
@@ -94,7 +150,7 @@ export interface StoredCredentials {
 export async function getStoredCredentials(): Promise<StoredCredentials | null> {
   try {
     // Try native keychain first if available
-    if (isNativeKeychainAvailable()) {
+    if (shouldUseNativeKeychain()) {
       const entry = new Entry(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
       const data = entry.getPassword();
       if (!data) return null;
@@ -112,7 +168,7 @@ export async function getStoredCredentials(): Promise<StoredCredentials | null> 
 export async function storeCredentials(credentials: StoredCredentials): Promise<void> {
   try {
     // Try native keychain first if available
-    if (isNativeKeychainAvailable()) {
+    if (shouldUseNativeKeychain()) {
       const entry = new Entry(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
       entry.setPassword(JSON.stringify(credentials));
       logger.debug('Credentials stored in native keychain');
@@ -131,7 +187,7 @@ export async function storeCredentials(credentials: StoredCredentials): Promise<
 export async function deleteStoredCredentials(): Promise<void> {
   try {
     // Try native keychain first if available
-    if (isNativeKeychainAvailable()) {
+    if (shouldUseNativeKeychain()) {
       const entry = new Entry(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
       entry.deleteCredential();
       logger.debug('Credentials deleted from native keychain');
