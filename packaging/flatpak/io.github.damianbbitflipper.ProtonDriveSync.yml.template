@@ -1,6 +1,6 @@
 app-id: io.github.damianbbitflipper.ProtonDriveSync
 runtime: org.freedesktop.Platform
-runtime-version: '24.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 command: proton-drive-sync
 
@@ -16,6 +16,9 @@ finish-args:
 modules:
   - name: proton-drive-sync
     buildsystem: simple
+    build-options:
+      strip: false
+      no-debuginfo: true
     build-commands:
       - install -Dm755 proton-drive-sync /app/bin/proton-drive-sync
       - install -Dm644 io.github.damianbbitflipper.ProtonDriveSync.desktop /app/share/applications/io.github.damianbbitflipper.ProtonDriveSync.desktop

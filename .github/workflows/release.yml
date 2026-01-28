@@ -117,7 +117,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y dpkg-dev rpm flatpak flatpak-builder
           sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
+          sudo flatpak install -y flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
 
       - name: Build .deb package
         run: ./packaging/scripts/build-deb.sh
