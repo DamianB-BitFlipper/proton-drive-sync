@@ -11,6 +11,7 @@
  */
 
 import { statSync, type Stats } from 'fs';
+import { createHash } from 'crypto';
 import type {
   CreateProtonDriveClient,
   UploadMetadata,
@@ -18,6 +19,7 @@ import type {
   CreateResult,
 } from './types.js';
 import { parsePath, findFileByName, findFolderByName } from './utils.js';
+import { logger } from '../logger.js';
 
 // Re-export the client type for backwards compatibility
 export type { CreateProtonDriveClient, CreateResult } from './types.js';
@@ -71,6 +73,25 @@ async function ensureRemotePath(
 }
 
 // ============================================================================
+// Hash Utilities
+// ============================================================================
+
+/**
+ * Compute SHA1 hash of a local file
+ */
+async function computeFileSha1(filePath: string): Promise<string | null> {
+  try {
+    const file = Bun.file(filePath);
+    const buffer = await file.arrayBuffer();
+    const hash = createHash('sha1').update(Buffer.from(buffer)).digest('hex');
+    return hash;
+  } catch (error) {
+    logger.warn(`Failed to compute SHA1 for ${filePath}: ${error}`);
+    return null;
+  }
+}
+
+// ============================================================================
 // File Upload
 // ============================================================================
 
@@ -84,7 +105,7 @@ async function uploadFile(
   const fileSize = Number(fileStat.size);
 
   // Check if file already exists in the target folder
-  const existingFileUid = await findFileByName(client, targetFolderUid, fileName);
+  const existingFile = await findFileByName(client, targetFolderUid, fileName);
 
   const metadata: UploadMetadata = {
     mediaType: 'application/octet-stream',
@@ -95,8 +116,84 @@ async function uploadFile(
 
   let uploadController: UploadController;
 
-  if (existingFileUid) {
-    const revisionUploader = await client.getFileRevisionUploader(existingFileUid, metadata);
+  if (existingFile) {
+    // Compare files using SHA1 digest if available, otherwise fall back to size+mtime
+    try {
+      const remoteSha1 = existingFile.claimedDigests?.sha1;
+      const localMtime = fileStat.mtime.getTime();
+      const remoteMtime = existingFile.updatedAt
+        ? new Date(existingFile.updatedAt).getTime()
+        : undefined;
+
+      logger.info(
+        `Remote file check for ${fileName}: ` +
+          `remoteSha1=${remoteSha1 || 'none'}, ` +
+          `remoteMtime=${remoteMtime}, localMtime=${localMtime}`
+      );
+
+      if (remoteSha1) {
+        // Compare using SHA1 digest - most reliable method
+        const localSha1 = await computeFileSha1(localFilePath);
+        logger.info(`SHA1 comparison for ${fileName}: remote=${remoteSha1}, local=${localSha1}`);
+
+        if (localSha1 && localSha1.toLowerCase() === remoteSha1.toLowerCase()) {
+          // SHA1 matches - files are identical, skip upload
+          logger.info(`Skipping upload for ${fileName} - SHA1 digests match`);
+          return existingFile.uid;
+        }
+
+        // SHA1 doesn't match - only upload if local file is newer
+        if (remoteMtime !== undefined) {
+          if (localMtime <= remoteMtime) {
+            logger.info(
+              `Skipping upload for ${fileName} - SHA1 differs but local file is older or same age ` +
+                `(local: ${localMtime}, remote: ${remoteMtime})`
+            );
+            return existingFile.uid;
+          } else {
+            logger.info(
+              `Uploading new revision for ${fileName} - SHA1 differs and local file is newer ` +
+                `(local: ${localMtime}, remote: ${remoteMtime})`
+            );
+          }
+        }
+      } else {
+        // No SHA1 available, fall back to size + mtime comparison
+        const remoteSize = typeof existingFile.size === 'number' ? existingFile.size : undefined;
+        logger.info(
+          `Fallback comparison for ${fileName}: ` +
+            `remoteSize=${remoteSize}, localSize=${fileSize}, ` +
+            `remoteMtime=${remoteMtime}, localMtime=${localMtime}`
+        );
+
+        if (remoteSize !== undefined && remoteMtime !== undefined) {
+          const sizeMatch = remoteSize === fileSize;
+          const mtimeMatch = Math.abs(remoteMtime - localMtime) <= 1000;
+
+          logger.info(
+            `Fallback check for ${fileName}: sizeMatch=${sizeMatch}, mtimeMatch=${mtimeMatch}`
+          );
+
+          if (sizeMatch && mtimeMatch) {
+            logger.info(`Skipping upload for ${fileName} - size and mtime match`);
+            return existingFile.uid;
+          }
+
+          // If size/mtime differ, only upload if local is newer
+          if (localMtime <= remoteMtime) {
+            logger.info(
+              `Skipping upload for ${fileName} - size/mtime differ but local is older/same`
+            );
+            return existingFile.uid;
+          }
+        }
+      }
+    } catch (error) {
+      // If metadata parsing fails, fall through to uploading a revision
+      logger.warn(`Failed to compare remote metadata for ${fileName}: ${error}`);
+    }
+
+    const revisionUploader = await client.getFileRevisionUploader(existingFile.uid, metadata);
     const webStream = Bun.file(localFilePath).stream();
     uploadController = await revisionUploader.uploadFromStream(webStream, []);
   } else {

@@ -6,7 +6,7 @@
  */
 
 import { basename, dirname } from 'path';
-import type { BaseProtonDriveClient, ParsedPath } from './types.js';
+import type { BaseProtonDriveClient, NodeData, ParsedPath } from './types.js';
 
 // Re-export types for convenience
 export type { BaseProtonDriveClient, ParsedPath } from './types.js';
@@ -77,20 +77,74 @@ export async function findNodeByName(
 
 /**
  * Find an existing file by name in a folder.
- * Returns the file UID if found, null otherwise.
+ * Returns the node info if found, null otherwise.
  */
 export async function findFileByName(
   client: BaseProtonDriveClient,
   folderUid: string,
   fileName: string
-): Promise<string | null> {
-  let foundUid: string | null = null;
+): Promise<{
+  uid: string;
+  name: string;
+  type: string;
+  size?: number;
+  updatedAt?: Date;
+  claimedDigests?: Record<string, string>;
+  activeRevision?: {
+    uid: string;
+    state: string;
+    storageSize: number;
+    claimedSize: number;
+    claimedModificationTime?: Date;
+    claimedDigests?: Record<string, string>;
+  };
+} | null> {
+  let found: {
+    uid: string;
+    name: string;
+    type: string;
+    size?: number;
+    updatedAt?: Date;
+    claimedDigests?: Record<string, string>;
+    activeRevision?: {
+      uid: string;
+      state: string;
+      storageSize: number;
+      claimedSize: number;
+      claimedModificationTime?: Date;
+      claimedDigests?: Record<string, string>;
+    };
+  } | null = null;
   for await (const node of client.iterateFolderChildren(folderUid)) {
-    if (!foundUid && node.ok && node.value?.name === fileName && node.value.type === 'file') {
-      foundUid = node.value.uid;
+    if (!found && node.ok && node.value?.name === fileName && node.value.type === 'file') {
+      const nodeValue = node.value as NodeData;
+      const activeRev = nodeValue.activeRevision;
+
+      // Use claimedSize (original file size) for comparison, not storageSize (encrypted size)
+      const size = activeRev?.claimedSize ?? nodeValue.totalStorageSize ?? undefined;
+      const updatedAt = activeRev?.claimedModificationTime ?? nodeValue.creationTime ?? undefined;
+
+      found = {
+        uid: nodeValue.uid,
+        name: nodeValue.name,
+        type: nodeValue.type,
+        size,
+        updatedAt,
+        claimedDigests: activeRev?.claimedDigests,
+        activeRevision: activeRev
+          ? {
+              uid: activeRev.uid,
+              state: activeRev.state,
+              storageSize: activeRev.storageSize,
+              claimedSize: activeRev.claimedSize,
+              claimedModificationTime: activeRev.claimedModificationTime,
+              claimedDigests: activeRev.claimedDigests,
+            }
+          : undefined,
+      };
     }
   }
-  return foundUid;
+  return found;
 }
 
 /**
