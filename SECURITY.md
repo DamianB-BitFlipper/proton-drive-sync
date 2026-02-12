@@ -11,8 +11,18 @@ currently being supported with security updates.
 | < 0.2.3-beta.1 | :x:                |
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+If you discover a security vulnerability in this project, please report it privately using
+this repository's GitHub Security Advisories feature ("Security" tab → "Report a vulnerability").
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+When reporting, please include, at a minimum:
+- A description of the issue and its potential impact
+- Steps to reproduce (including any required configuration or data)
+- The version(s) of the project you tested, and your environment (OS, language/runtime, etc.)
+- Any relevant logs, proof-of-concept code, or screenshots
+
+We will acknowledge new reports within 5 business days and aim to provide an initial triage
+(including a severity assessment and next steps) within 10 business days. While a fix or
+mitigation is being developed, we will provide status updates at least every 14 days to the
+original reporter. If the vulnerability is confirmed, we will work with you on coordinated
+disclosure; if it is not accepted as a vulnerability, we will explain the reasons for that
+decision.
