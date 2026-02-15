@@ -26,6 +26,11 @@ export interface ExcludePattern {
   globs: string[];
 }
 
+export interface WatcherConfig {
+  use_polling: boolean; // Use polling instead of native fs events (more reliable on network drives)
+  polling_interval: number; // Polling interval in milliseconds (only used when use_polling is true)
+}
+
 /** Behavior when a local file is deleted */
 export const RemoteDeleteBehavior = {
   TRASH: 'trash',
@@ -41,6 +46,7 @@ export interface Config {
   dashboard_host: string;
   dashboard_port: number;
   exclude_patterns: ExcludePattern[];
+  watcher: WatcherConfig;
 }
 
 /** Config keys that can be watched for changes */
@@ -68,6 +74,12 @@ export const DEFAULT_DASHBOARD_HOST = '127.0.0.1';
 /** Default dashboard port */
 export const DEFAULT_DASHBOARD_PORT = 4242;
 
+/** Default watcher use_polling (false = use native fs events) */
+export const DEFAULT_WATCHER_USE_POLLING = false;
+
+/** Default watcher polling interval in milliseconds */
+export const DEFAULT_WATCHER_POLLING_INTERVAL = 5000;
+
 /** Default configuration values */
 export const defaultConfig: Config = {
   sync_dirs: [],
@@ -76,6 +88,10 @@ export const defaultConfig: Config = {
   dashboard_host: DEFAULT_DASHBOARD_HOST,
   dashboard_port: DEFAULT_DASHBOARD_PORT,
   exclude_patterns: [],
+  watcher: {
+    use_polling: DEFAULT_WATCHER_USE_POLLING,
+    polling_interval: DEFAULT_WATCHER_POLLING_INTERVAL,
+  },
 };
 
 const CONFIG_DIR = getConfigDir();
@@ -144,6 +160,22 @@ function parseConfig(throwOnError: boolean): Config | null {
     // Default exclude_patterns if not set
     if (config.exclude_patterns === undefined) {
       config.exclude_patterns = [];
+    }
+
+    // Default watcher config if not set
+    if (config.watcher === undefined) {
+      config.watcher = {
+        use_polling: DEFAULT_WATCHER_USE_POLLING,
+        polling_interval: DEFAULT_WATCHER_POLLING_INTERVAL,
+      };
+    } else {
+      // Apply defaults for missing watcher properties
+      if (config.watcher.use_polling === undefined) {
+        config.watcher.use_polling = DEFAULT_WATCHER_USE_POLLING;
+      }
+      if (config.watcher.polling_interval === undefined) {
+        config.watcher.polling_interval = DEFAULT_WATCHER_POLLING_INTERVAL;
+      }
     }
 
     // Validate all sync_dirs entries
@@ -254,6 +286,7 @@ function reloadConfig(): void {
     'dashboard_host',
     'dashboard_port',
     'exclude_patterns',
+    'watcher',
   ];
   for (const key of keys) {
     if (!isEqual(oldConfig[key], newConfig[key])) {
