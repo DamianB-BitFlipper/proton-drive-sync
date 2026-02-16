@@ -37,6 +37,29 @@ import {
 import { scanDirectory } from './watcher.js';
 
 // ============================================================================
+// File Handle Limiter - EMFILE Protection
+// ============================================================================
+
+const MAX_CONCURRENT_FILE_OPS = 50;
+let activeFileOps = 0;
+const fileOpWaitQueue: Array<() => void> = [];
+
+async function withFileHandleLimit<T>(operation: () => Promise<T>): Promise<T> {
+  while (activeFileOps >= MAX_CONCURRENT_FILE_OPS) {
+    await new Promise<void>((resolve) => fileOpWaitQueue.push(resolve));
+  }
+
+  activeFileOps++;
+  try {
+    return await operation();
+  } finally {
+    activeFileOps--;
+    const next = fileOpWaitQueue.shift();
+    if (next) next();
+  }
+}
+
+// ============================================================================
 // Task Pool State (persistent across iterations)
 // ============================================================================
 
@@ -204,7 +227,11 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
         const mapping = getNodeMapping(localPath, remotePath);
         const isDirectory = mapping?.isDirectory ?? false;
 
-        const { existed, trashed } = await deleteNodeOrThrow(client, remotePath, dryRun, trashOnly);
+        // Throttle delete operations
+        const { existed, trashed } = await withFileHandleLimit(() =>
+          deleteNodeOrThrow(client, remotePath, dryRun, trashOnly)
+        );
+
         if (!existed) {
           logger.info(`Already gone: ${remotePath}`);
         } else {
@@ -228,11 +255,10 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
       case SyncEventType.UPDATE: {
         const typeLabel = eventType === SyncEventType.CREATE_FILE ? 'Creating' : 'Updating';
         logger.info(`${typeLabel}: ${remotePath}`);
-        const { nodeUid, parentNodeUid, isDirectory } = await createNodeOrThrow(
-          client,
-          localPath,
-          remotePath,
-          dryRun
+
+        // Throttle file operations
+        const { nodeUid, parentNodeUid, isDirectory } = await withFileHandleLimit(() =>
+          createNodeOrThrow(client, localPath, remotePath, dryRun)
         );
         logger.info(`Success: ${remotePath} -> ${nodeUid}`);
         // Store node mapping and change token for future operations
@@ -249,12 +275,9 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
       case SyncEventType.CREATE_DIR: {
         logger.info(`Creating directory: ${remotePath}`);
 
-        // Step 1: Create the directory on remote
-        const { nodeUid, parentNodeUid } = await createNodeOrThrow(
-          client,
-          localPath,
-          remotePath,
-          dryRun
+        // Throttle directory creation
+        const { nodeUid, parentNodeUid } = await withFileHandleLimit(() =>
+          createNodeOrThrow(client, localPath, remotePath, dryRun)
         );
         logger.info(`Directory created: ${remotePath} -> ${nodeUid}`);
 
