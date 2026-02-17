@@ -195,16 +195,12 @@ const INVALID_REFRESH_TOKEN_CODE = 10013;
 // Constants
 // ============================================================================
 
-const API_BASE_URL = 'https://api.protonmail.ch';
+const API_BASE_URL = 'https://drive-api.proton.me';
 const SRP_LEN = 256; // 2048 / 8, in bytes
 const AUTH_VERSION = 4;
 const BCRYPT_PREFIX = '$2y$10$';
-// Linux has no official APP_VERSION, so we masquerade as `macos`
-const PLATFORM_MAP: Record<string, string> = { darwin: 'macos', win32: 'windows' };
-const PLATFORM = PLATFORM_MAP[process.platform] ?? 'macos';
-const APP_VERSION =
-  PLATFORM === 'windows' ? `${PLATFORM}-drive@1.12.4` : `${PLATFORM}-drive@2.10.1`;
-const CHILD_CLIENT_ID = PLATFORM === 'macos' ? 'macOSDrive' : 'windowsDrive';
+const APP_VERSION = 'external-drive-proton_drive_sync@1.0.0';
+const CHILD_CLIENT_ID = 'ExternalDrive';
 
 // SRP Modulus verification key
 const SRP_MODULUS_KEY = `-----BEGIN PGP PUBLIC KEY BLOCK-----
