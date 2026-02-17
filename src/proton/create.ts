@@ -12,6 +12,7 @@
 
 import { statSync, type Stats } from 'fs';
 import { createHash } from 'crypto';
+import { extname } from 'path';
 import type {
   CreateProtonDriveClient,
   UploadMetadata,
@@ -103,6 +104,56 @@ async function computeFileSha1(filePath: string): Promise<string | null> {
 }
 
 // ============================================================================
+// Media Type Detection
+// ============================================================================
+
+/**
+ * Basic MIME type lookup by file extension. Falls back to application/octet-stream.
+ */
+function guessMediaType(filePath: string): string {
+  const ext = extname(filePath).toLowerCase();
+  const map: Record<string, string> = {
+    '.txt': 'text/plain',
+    '.md': 'text/markdown',
+    '.json': 'application/json',
+    '.pdf': 'application/pdf',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.html': 'text/html',
+    '.htm': 'text/html',
+    '.css': 'text/css',
+    '.js': 'application/javascript',
+    '.ts': 'application/typescript',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.mkv': 'video/x-matroska',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.zip': 'application/zip',
+    '.tar': 'application/x-tar',
+    '.gz': 'application/gzip',
+    '.7z': 'application/x-7z-compressed',
+    '.exe': 'application/vnd.microsoft.portable-executable',
+    '.deb': 'application/vnd.debian.binary-package',
+    '.iso': 'application/x-iso9660-image',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.csv': 'text/csv',
+    '.xml': 'application/xml',
+  };
+
+  return map[ext] ?? 'application/octet-stream';
+}
+
+// ============================================================================
 // File Upload
 // ============================================================================
 
@@ -119,7 +170,7 @@ async function uploadFile(
   const existingFile = await findFileByName(client, targetFolderUid, fileName);
 
   const metadata: UploadMetadata = {
-    mediaType: 'application/octet-stream',
+    mediaType: guessMediaType(localFilePath),
     expectedSize: fileSize,
     modificationTime: fileStat.mtime,
     overrideExistingDraftByOtherClient: true,
