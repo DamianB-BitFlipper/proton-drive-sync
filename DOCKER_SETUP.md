@@ -23,6 +23,7 @@ Run Proton Drive Sync in Docker with support for Linux x86_64 and ARM64.
    openssl rand -base64 32
 
    # Add it to .env as KEYRING_PASSWORD
+   # Optionally add KEYCHAIN_BACKEND=file to skip native keyrings inside the container
    # Set your sync directory paths (host paths)
    SYNC_DIR_1=/path/to/documents
    SYNC_DIR_2=/path/to/photos
@@ -55,6 +56,7 @@ Run Proton Drive Sync in Docker with support for Linux x86_64 and ARM64.
 | Variable           | Required | Default            | Description                       |
 | ------------------ | -------- | ------------------ | --------------------------------- |
 | `KEYRING_PASSWORD` | Yes      | -                  | Encryption key for credentials    |
+| `KEYCHAIN_BACKEND` | No       | `auto` (recommended: `file`) | Force file-based credential store |
 | `TZ`               | No       | `UTC`              | Container timezone                |
 | `DASHBOARD_PORT`   | No       | `4242`             | Dashboard port on host            |
 | `SYNC_DIR_1`       | No       | `./data/documents` | First sync directory (host path)  |

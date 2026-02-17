@@ -29,7 +29,7 @@ import {
   serviceUnloadCommand,
   serviceLoadCommand,
 } from './cli/service/index.js';
-import type { InstallScope } from './cli/service/types.js';
+import type { InstallScope, KeychainBackend } from './cli/service/types.js';
 import { stopCommand } from './cli/stop.js';
 import { startCommand } from './cli/start.js';
 import { statusCommand } from './cli/status.js';
@@ -161,7 +161,18 @@ serviceCommand
   .command('install')
   .description('Install and start the system service')
   .option('--install-scope <scope>', 'Install scope: user or system (Linux only)', 'user')
-  .action((options) => serviceInstallCommand(true, options.installScope as InstallScope));
+  .option(
+    '--keychain-backend <backend>',
+    'Keychain backend: auto (default), native, or file',
+    'auto'
+  )
+  .action((options) =>
+    serviceInstallCommand(
+      true,
+      options.installScope as InstallScope,
+      options.keychainBackend as KeychainBackend
+    )
+  );
 
 serviceCommand
   .command('uninstall')
