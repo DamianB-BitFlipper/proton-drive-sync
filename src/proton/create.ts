@@ -11,6 +11,7 @@
  */
 
 import { statSync, type Stats } from 'fs';
+import { createHash } from 'crypto';
 import type {
   CreateProtonDriveClient,
   UploadMetadata,
@@ -18,6 +19,7 @@ import type {
   CreateResult,
 } from './types.js';
 import { parsePath, findFileByName, findFolderByName } from './utils.js';
+import { logger } from '../logger.js';
 
 // Re-export the client type for backwards compatibility
 export type { CreateProtonDriveClient, CreateResult } from './types.js';
@@ -71,6 +73,36 @@ async function ensureRemotePath(
 }
 
 // ============================================================================
+// Hash Utilities
+// ============================================================================
+
+/**
+ * Compute SHA1 hash of a local file without buffering whole file in memory
+ */
+async function computeFileSha1(filePath: string): Promise<string | null> {
+  try {
+    const hash = createHash('sha1');
+    const stream = Bun.file(filePath).stream();
+    for await (const chunk of stream) {
+      // chunk can be ArrayBuffer | BufferSource | string; normalize to Buffer
+      if (typeof chunk === 'string') {
+        hash.update(chunk);
+      } else if (chunk instanceof ArrayBuffer) {
+        hash.update(Buffer.from(chunk));
+      } else if (ArrayBuffer.isView(chunk)) {
+        hash.update(Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+      } else {
+        hash.update(Buffer.from(chunk));
+      }
+    }
+    return hash.digest('hex');
+  } catch (error) {
+    logger.warn(`Failed to compute SHA1 for ${filePath}: ${error}`);
+    return null;
+  }
+}
+
+// ============================================================================
 // File Upload
 // ============================================================================
 
@@ -84,7 +116,7 @@ async function uploadFile(
   const fileSize = Number(fileStat.size);
 
   // Check if file already exists in the target folder
-  const existingFileUid = await findFileByName(client, targetFolderUid, fileName);
+  const existingFile = await findFileByName(client, targetFolderUid, fileName);
 
   const metadata: UploadMetadata = {
     mediaType: 'application/octet-stream',
@@ -95,8 +127,44 @@ async function uploadFile(
 
   let uploadController: UploadController;
 
-  if (existingFileUid) {
-    const revisionUploader = await client.getFileRevisionUploader(existingFileUid, metadata);
+  if (existingFile) {
+    // Compare files using SHA1 digest - skip upload only if hashes match
+    try {
+      const remoteSha1 = existingFile.activeRevision?.claimedDigests?.sha1;
+      const localMtime = fileStat.mtime.getTime();
+      const remoteMtime = existingFile.updatedAt
+        ? new Date(existingFile.updatedAt).getTime()
+        : undefined;
+
+      logger.debug(
+        `Remote file check for ${fileName}: ` +
+          `remoteSha1=${remoteSha1 || 'none'}, ` +
+          `remoteMtime=${remoteMtime}, localMtime=${localMtime}`
+      );
+
+      if (remoteSha1) {
+        // Compare using SHA1 digest - most reliable method
+        const localSha1 = await computeFileSha1(localFilePath);
+        logger.debug(`SHA1 comparison for ${fileName}: remote=${remoteSha1}, local=${localSha1}`);
+
+        if (localSha1 && localSha1.toLowerCase() === remoteSha1.toLowerCase()) {
+          // SHA1 matches - files are identical, skip upload
+          logger.info(`Skipping upload for ${fileName} - SHA1 digests match`);
+          return existingFile.uid;
+        }
+
+        // SHA1 differs - content is different, always upload
+        logger.info(`Uploading new revision for ${fileName} - SHA1 digests differ`);
+      } else {
+        // No SHA1 available from remote - upload to ensure content is current
+        logger.debug(`No SHA1 digest available for ${fileName}, uploading`);
+      }
+    } catch (error) {
+      // If metadata parsing fails, fall through to uploading a revision
+      logger.warn(`Failed to compare remote metadata for ${fileName}: ${error}`);
+    }
+
+    const revisionUploader = await client.getFileRevisionUploader(existingFile.uid, metadata);
     const webStream = Bun.file(localFilePath).stream();
     uploadController = await revisionUploader.uploadFromStream(webStream, []);
   } else {

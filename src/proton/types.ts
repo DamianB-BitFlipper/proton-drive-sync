@@ -8,10 +8,34 @@
 // Node Types
 // ============================================================================
 
-export interface NodeData {
-  name: string;
+export interface RevisionData {
   uid: string;
+  state: string;
+  creationTime: Date;
+  contentAuthor?: unknown;
+  storageSize: number;
+  claimedSize: number;
+  claimedModificationTime?: Date;
+  claimedDigests?: Record<string, string>;
+  claimedAdditionalMetadata?: unknown;
+}
+
+export interface NodeData {
+  uid: string;
+  parentUid?: string;
+  name: string;
   type: string;
+  mediaType?: string;
+  isShared?: boolean;
+  isSharedPublicly?: boolean;
+  creationTime?: Date;
+  trashTime?: Date;
+  totalStorageSize?: number;
+  treeEventScopeId?: string;
+  activeRevision?: RevisionData;
+  // For backwards compatibility
+  size?: number;
+  updatedAt?: Date;
 }
 
 export interface NodeResult {
