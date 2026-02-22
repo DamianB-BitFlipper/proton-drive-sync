@@ -1,7 +1,7 @@
 /**
  * Linux systemd service implementation
  * Supports both user-level (~/.config/systemd/user/) and system-level (/etc/systemd/system/) services
- * Uses file-based encrypted credential storage (no gnome-keyring dependency)
+ * Uses native OS keyring (Secret Service/libsecret) with automatic fallback to encrypted file storage
  */
 
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
@@ -15,7 +15,12 @@ import {
   getEffectiveUid,
   chownToEffectiveUser,
 } from '../../paths.js';
-import type { ServiceOperations, InstallScope } from './types.js';
+import type {
+  ServiceOperations,
+  InstallScope,
+  ServiceInstallOptions,
+  KeychainBackend,
+} from './types.js';
 // @ts-expect-error Bun text imports
 import serviceTemplate from './templates/proton-drive-sync.service' with { type: 'text' };
 
@@ -24,10 +29,6 @@ import serviceTemplate from './templates/proton-drive-sync.service' with { type:
 // ============================================================================
 
 const SERVICE_NAME = 'proton-drive-sync';
-
-// Default encryption password for file-based credential storage
-// This is stored in the systemd service file anyway, so hardcoding doesn't reduce security
-const ENCRYPTION_PASSWORD = 'proton-drive-sync';
 
 // ============================================================================
 // Path Helpers
@@ -106,15 +107,30 @@ function daemonReload(scope: InstallScope): boolean {
 // Service File Generation
 // ============================================================================
 
-function generateServiceFile(binPath: string, password: string, scope: InstallScope): string {
+function buildKeychainEnv(options?: ServiceInstallOptions): string {
+  const backend = options?.keychainBackend;
+  if (!backend || backend === 'auto') {
+    return '';
+  }
+
+  const value: KeychainBackend = backend === 'file' ? 'file' : 'native';
+  return value;
+}
+
+function generateServiceFile(
+  binPath: string,
+  scope: InstallScope,
+  options?: ServiceInstallOptions
+): string {
   const home = getEffectiveHome();
   const uid = getEffectiveUid();
+  const keychainBackendValue = buildKeychainEnv(options);
 
   let content = serviceTemplate
     .replace('{{BIN_PATH}}', binPath)
     .replace(/\{\{HOME\}\}/g, home)
     .replace(/\{\{UID\}\}/g, String(uid))
-    .replace('{{KEYRING_PASSWORD}}', password)
+    .replace('{{KEYCHAIN_BACKEND}}', keychainBackendValue)
     .replace('{{WANTED_BY}}', scope === 'system' ? 'multi-user.target' : 'default.target');
 
   if (scope === 'system') {
@@ -135,15 +151,12 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
   const paths = getPaths(scope);
 
   return {
-    async install(binPath: string): Promise<boolean> {
+    async install(binPath: string, options?: ServiceInstallOptions): Promise<boolean> {
       // System scope requires root
       if (scope === 'system' && !isRunningAsRoot()) {
         logger.error('System scope requires running with sudo');
         return false;
       }
-
-      // Use hardcoded encryption password for file-based credential storage
-      const password = ENCRYPTION_PASSWORD;
 
       // Create systemd directory if it doesn't exist
       if (!existsSync(paths.serviceDir)) {
@@ -166,7 +179,7 @@ function createLinuxService(scope: InstallScope): ServiceOperations {
       }
 
       // Write main service file
-      const content = generateServiceFile(binPath, password, scope);
+      const content = generateServiceFile(binPath, scope, options);
       writeFileSync(paths.servicePath, content);
       logger.info(`Created: ${paths.servicePath}`);
 

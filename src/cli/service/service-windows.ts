@@ -6,7 +6,7 @@
 
 import { logger } from '../../logger.js';
 import { setFlag, clearFlag, FLAGS } from '../../flags.js';
-import type { ServiceOperations } from './types.js';
+import type { ServiceOperations, ServiceInstallOptions } from './types.js';
 
 const TASK_NAME = 'ProtonDriveSync';
 
@@ -28,7 +28,7 @@ function runSchtasks(...args: string[]): SchtasksResult {
   };
 }
 
-async function install(binPath: string): Promise<boolean> {
+async function install(binPath: string, _options?: ServiceInstallOptions): Promise<boolean> {
   // Create task that runs at user logon
   // /rl limited = run with limited privileges (no admin elevation)
   // /f = force overwrite if exists

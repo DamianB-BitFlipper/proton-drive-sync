@@ -10,7 +10,7 @@
 import { sendSignal } from '../../signals.js';
 import { hasFlag, FLAGS } from '../../flags.js';
 import { logger } from '../../logger.js';
-import type { ServiceOperations, InstallScope } from './types.js';
+import type { ServiceOperations, InstallScope, KeychainBackend } from './types.js';
 
 function getBinPathSafe(): string | null {
   // First, try the current executable path (works for compiled binaries)
@@ -55,9 +55,20 @@ function isSupportedPlatform(): boolean {
   );
 }
 
+function parseKeychainBackend(value: string): KeychainBackend {
+  const normalized = value?.toLowerCase?.() ?? 'auto';
+  if (normalized === 'auto' || normalized === 'native' || normalized === 'file') {
+    return normalized;
+  }
+
+  logger.error('Invalid keychain backend. Use one of: auto, native, file.');
+  process.exit(1);
+}
+
 export async function serviceInstallCommand(
   interactive: boolean = true,
-  scope: InstallScope = 'user'
+  scope: InstallScope = 'user',
+  keychainBackend: KeychainBackend = 'auto'
 ): Promise<void> {
   if (!isSupportedPlatform()) {
     if (interactive) {
@@ -88,7 +99,7 @@ export async function serviceInstallCommand(
   }
 
   const service = await getServiceManager(scope);
-  await service.install(binPath);
+  await service.install(binPath, { keychainBackend: parseKeychainBackend(keychainBackend) });
 }
 
 export async function serviceUninstallCommand(interactive: boolean = true): Promise<void> {

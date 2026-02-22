@@ -10,7 +10,6 @@ finish-args:
   # Filesystem access (sync needs to read/write user files)
   - --filesystem=host
   # For keytar/libsecret credential storage
-  - --socket=session-bus
   - --talk-name=org.freedesktop.secrets
 
 modules:
