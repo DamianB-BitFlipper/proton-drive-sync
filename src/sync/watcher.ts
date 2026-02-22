@@ -18,6 +18,29 @@ import { isPathExcluded } from './exclusions.js';
 import { WATCHER_DEBOUNCE_MS } from './constants.js';
 
 // ============================================================================
+// Scan Throttle - EMFILE Protection
+// ============================================================================
+
+const MAX_CONCURRENT_STATS = 200;
+let activeStats = 0;
+const statsQueue: Array<() => void> = [];
+
+async function throttledStat(path: string): Promise<Stats> {
+  while (activeStats >= MAX_CONCURRENT_STATS) {
+    await new Promise<void>((resolve) => statsQueue.push(resolve));
+  }
+
+  activeStats++;
+  try {
+    return statSync(path);
+  } finally {
+    activeStats--;
+    const next = statsQueue.shift();
+    if (next) next();
+  }
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -118,7 +141,7 @@ export async function scanDirectory(
       }
 
       try {
-        const stats = statSync(fullPath);
+        const stats = await throttledStat(fullPath);
         results.set(fullPath, {
           size: stats.size,
           mtime_ms: stats.mtimeMs,
