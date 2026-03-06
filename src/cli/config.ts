@@ -12,7 +12,7 @@ import {
   getConfig,
   defaultConfig,
 } from '../config.js';
-import type { Config, ExcludePattern, SyncDir, RemoteDeleteBehavior } from '../config.js';
+import type { Config, ExcludePattern, SyncDir, RemoteDeleteBehavior, WatcherConfig } from '../config.js';
 import { sendSignal } from '../signals.js';
 import { chownToEffectiveUser } from '../paths.js';
 import { validateGlob, clearRegexCache } from '../sync/exclusions.js';
@@ -37,6 +37,7 @@ export async function configCommand(): Promise<void> {
         { name: 'Sync concurrency', value: 'concurrency' },
         { name: 'Sync directories', value: 'sync-dir' },
         { name: 'Exclusion patterns', value: 'exclude' },
+        { name: 'Watcher settings', value: 'watcher' },
         { name: 'Done', value: 'done' },
       ],
     });
@@ -66,6 +67,9 @@ export async function configCommand(): Promise<void> {
         break;
       case 'exclude':
         await excludeCommand({});
+        break;
+      case 'watcher':
+        await watcherCommand();
         break;
     }
   }
@@ -158,6 +162,10 @@ export function getCommand(key: string | undefined, options: GetOptions): void {
     } else {
       console.log('\n  exclude_patterns: (none configured)');
     }
+
+    console.log('\n  watcher:');
+    console.log(`    use_polling: ${config.watcher.use_polling}`);
+    console.log(`    polling_interval: ${config.watcher.polling_interval}ms`);
 
     console.log(`\nConfig file: ${CONFIG_FILE}`);
   }
@@ -784,4 +792,59 @@ function removeExclusions(targetPath: string, globs: string[]): void {
 
   const pathLabel = targetPath === '/' ? 'global' : targetPath;
   console.log(`\nRemoved ${removedCount} pattern(s) from ${pathLabel} exclusions.`);
+}
+
+// ============================================================================
+// Watcher Subcommand
+// ============================================================================
+
+/**
+ * Configure watcher settings (use_polling and polling_interval)
+ */
+export async function watcherCommand(): Promise<void> {
+  const config = loadConfigRaw();
+  const watcher = (config.watcher as WatcherConfig) ?? { ...defaultConfig.watcher };
+
+  console.log('');
+  console.log('  File watcher settings control how changes are detected in your sync directories.');
+  console.log('');
+  console.log('  By default, native filesystem events are used (more efficient).');
+  console.log('  Polling mode is more reliable for network drives (NFS, CIFS, SSHFS) or');
+  console.log('  certain environments where native events may not work correctly.');
+  console.log('');
+
+  const usePolling = await confirm({
+    message: 'Use polling mode instead of native filesystem events?',
+    default: watcher.use_polling,
+  });
+
+  let pollingInterval = watcher.polling_interval;
+  if (usePolling) {
+    const intervalStr = await input({
+      message: 'Polling interval (in milliseconds):',
+      default: String(watcher.polling_interval),
+      validate: (val) => {
+        const num = parseInt(val, 10);
+        if (isNaN(num) || num < 100) {
+          return 'Must be a number >= 100ms';
+        }
+        return true;
+      },
+    });
+    pollingInterval = parseInt(intervalStr, 10);
+  }
+
+  config.watcher = {
+    use_polling: usePolling,
+    polling_interval: pollingInterval,
+  };
+  saveConfigRaw(config);
+
+  console.log('');
+  if (usePolling) {
+    console.log(`Watcher configured: polling mode enabled (interval: ${pollingInterval}ms)`);
+  } else {
+    console.log('Watcher configured: using native filesystem events');
+  }
+  console.log('Note: Restart the service for changes to take effect.');
 }
