@@ -14,8 +14,11 @@ export const JOB_POLL_INTERVAL_MS = 2_000;
 /** Timeout for graceful shutdown (2 seconds) */
 export const SHUTDOWN_TIMEOUT_MS = 2_000;
 
-/** Time after which a PROCESSING job is considered stale (10 minutes) */
-export const STALE_PROCESSING_MS = 10 * 60 * 1000;
+/** Time after which a PROCESSING job is considered stale (4 minutes) */
+export const STALE_PROCESSING_MS = 4 * 60 * 1000;
+
+/** Hard timeout for a single sync job operation before retrying (3 minutes) */
+export const JOB_EXECUTION_TIMEOUT_MS = 3 * 60 * 1000;
 
 /** Debounce time for file watcher events (200ms) - used for awaitWriteFinish stabilityThreshold */
 export const WATCHER_DEBOUNCE_MS = 200;
@@ -56,6 +59,15 @@ export const NETWORK_RETRY_CAP_INDEX = 4;
 
 /** Fixed retry delay for REUPLOAD_NEEDED errors (256 seconds) */
 export const REUPLOAD_NEEDED_RETRY_SEC = 256;
+
+/**
+ * Delay (seconds) before retrying jobs recovered from BLOCKED due to
+ * "Invalid access token" errors.
+ *
+ * Keeps retries bounded when auth is genuinely invalid while still allowing
+ * automatic recovery once token refresh starts working again.
+ */
+export const AUTH_BLOCKED_RECOVERY_RETRY_SEC = 300;
 
 /** Number of retries before attempting delete+recreate for REUPLOAD_NEEDED errors */
 export const REUPLOAD_DELETE_RECREATE_THRESHOLD = 2;

@@ -181,12 +181,16 @@ export function acquireRunLock(): boolean {
 
     if (pidStr) {
       const pid = parseInt(pidStr, 10);
-      if (!isNaN(pid) && isProcessRunning(pid)) {
+      if (!isNaN(pid) && pid === process.pid) {
+        // Stale self-lock can happen after container/service restarts where PID is reused.
+        clearFlag(RUNNING_PID_FLAG, pidStr, tx);
+      } else if (!isNaN(pid) && isProcessRunning(pid)) {
         // Process is still running, can't acquire lock
         return false;
+      } else {
+        // Process is dead, clear stale lock
+        clearFlag(RUNNING_PID_FLAG, pidStr, tx);
       }
-      // Process is dead, clear stale lock
-      clearFlag(RUNNING_PID_FLAG, pidStr, tx);
     }
 
     // Clear all stale signals

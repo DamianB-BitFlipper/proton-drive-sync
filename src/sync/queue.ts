@@ -5,6 +5,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { existsSync } from 'fs';
 import { eq, and, lte, lt, inArray, isNull, sql, desc } from 'drizzle-orm';
 import { db, schema, run, type Tx } from '../db/index.js';
 import { SyncJobStatus, SyncEventType } from '../db/schema.js';
@@ -12,6 +13,7 @@ import { logger, isDebugEnabled } from '../logger.js';
 import { isPathWatched } from '../config.js';
 import {
   RETRY_DELAYS_SEC,
+  AUTH_BLOCKED_RECOVERY_RETRY_SEC,
   JITTER_FACTOR,
   STALE_PROCESSING_MS,
   NETWORK_RETRY_CAP_INDEX,
@@ -741,4 +743,126 @@ export function retryAllNow(): number {
   }
 
   return result.changes;
+}
+
+/**
+ * Recover jobs that were marked BLOCKED due to transient state races.
+ *
+ * - If job failed with "Invalid access token", move back to PENDING with cooldown.
+ * - If local file disappeared, mark as SYNCED (effectively skipped).
+ * - If local file exists and error was remote "file/folder not found",
+ *   move back to PENDING for another attempt.
+ */
+export function recoverBlockedJobs(
+  dryRun: boolean
+): { requeued: number; requeuedAuth: number; skippedMissingLocal: number } {
+  if (dryRun) {
+    return { requeued: 0, requeuedAuth: 0, skippedMissingLocal: 0 };
+  }
+
+  const blockedJobs = db
+    .select({
+      id: schema.syncJobs.id,
+      localPath: schema.syncJobs.localPath,
+      eventType: schema.syncJobs.eventType,
+      lastError: schema.syncJobs.lastError,
+    })
+    .from(schema.syncJobs)
+    .where(eq(schema.syncJobs.status, SyncJobStatus.BLOCKED))
+    .all();
+
+  if (blockedJobs.length === 0) {
+    return { requeued: 0, requeuedAuth: 0, skippedMissingLocal: 0 };
+  }
+
+  let requeued = 0;
+  let requeuedAuth = 0;
+  let skippedMissingLocal = 0;
+  const now = new Date();
+  const authRetryAt = new Date(Date.now() + AUTH_BLOCKED_RECOVERY_RETRY_SEC * 1000);
+
+  db.transaction((tx) => {
+    for (const job of blockedJobs) {
+      const lowerError = (job.lastError ?? '').toLowerCase();
+      const localExists = existsSync(job.localPath);
+
+      // Transient auth failure: retry later instead of requiring manual DB edits.
+      if (lowerError.includes('invalid access token')) {
+        run(
+          tx
+            .update(schema.syncJobs)
+            .set({
+              status: SyncJobStatus.PENDING,
+              retryAt: authRetryAt,
+              nRetries: 0,
+              lastError: null,
+            })
+            .where(eq(schema.syncJobs.id, job.id))
+        );
+        requeuedAuth++;
+        continue;
+      }
+
+      // Stale job: local path disappeared before retry attempts finished.
+      if (lowerError.includes('local path not found') && !localExists) {
+        run(
+          tx
+            .update(schema.syncJobs)
+            .set({
+              status: SyncJobStatus.SYNCED,
+              retryAt: now,
+              nRetries: 0,
+              lastError: 'Skipped: local path no longer exists',
+            })
+            .where(eq(schema.syncJobs.id, job.id))
+        );
+        skippedMissingLocal++;
+        continue;
+      }
+
+      // Recoverable race: remote "not found" but local still exists.
+      if (lowerError.includes('file or folder not found') && localExists) {
+        run(
+          tx
+            .update(schema.syncJobs)
+            .set({
+              status: SyncJobStatus.PENDING,
+              retryAt: now,
+              nRetries: 0,
+              lastError: null,
+            })
+            .where(eq(schema.syncJobs.id, job.id))
+        );
+        requeued++;
+        continue;
+      }
+
+      // DELETE jobs don't require local file presence for remote cleanup.
+      if (
+        lowerError.includes('file or folder not found') &&
+        job.eventType === SyncEventType.DELETE
+      ) {
+        run(
+          tx
+            .update(schema.syncJobs)
+            .set({
+              status: SyncJobStatus.PENDING,
+              retryAt: now,
+              nRetries: 0,
+              lastError: null,
+            })
+            .where(eq(schema.syncJobs.id, job.id))
+        );
+        requeued++;
+      }
+    }
+  });
+
+  if (requeued > 0 || requeuedAuth > 0 || skippedMissingLocal > 0) {
+    logger.info(
+      `Recovered blocked jobs: requeued=${requeued}, requeued_auth=${requeuedAuth}, skipped_missing_local=${skippedMissingLocal}`
+    );
+  }
+
+  return { requeued, requeuedAuth, skippedMissingLocal };
 }

@@ -35,6 +35,7 @@ import {
   deleteChangeTokensUnderPath,
 } from './fileState.js';
 import { scanDirectory } from './watcher.js';
+import { JOB_EXECUTION_TIMEOUT_MS } from './constants.js';
 
 // ============================================================================
 // Task Pool State (persistent across iterations)
@@ -42,6 +43,8 @@ import { scanDirectory } from './watcher.js';
 
 /** Active tasks: jobId -> promise */
 const activeTasks = new Map<number, Promise<void>>();
+/** Active task start times: jobId -> epoch ms */
+const activeTaskStartedAt = new Map<number, number>();
 
 // ============================================================================
 // Dynamic Concurrency
@@ -75,6 +78,30 @@ export function getActiveTaskCount(): number {
 }
 
 /**
+ * Recover in-memory worker slots from tasks that exceeded timeout budget.
+ * This is a safety net in case an underlying async operation never settles.
+ */
+function cleanupStaleActiveTasks(): void {
+  if (activeTasks.size === 0) return;
+
+  const now = Date.now();
+  const staleAfterMs = JOB_EXECUTION_TIMEOUT_MS + 30_000; // timeout + grace
+  let recovered = 0;
+
+  for (const [jobId, startedAt] of activeTaskStartedAt.entries()) {
+    if (now - startedAt <= staleAfterMs) continue;
+    activeTasks.delete(jobId);
+    activeTaskStartedAt.delete(jobId);
+    recovered++;
+    logger.warn(`Recovered stale in-memory task slot for job ${jobId}`);
+  }
+
+  if (recovered > 0) {
+    logger.warn(`Recovered ${recovered} stale in-memory task slot(s)`);
+  }
+}
+
+/**
  * Process all pending jobs until queue is empty (blocking).
  * Used for one-shot sync mode.
  */
@@ -92,8 +119,10 @@ export async function drainQueue(client: ProtonDriveClient, dryRun: boolean): Pr
       const jobId = job.id;
       const taskPromise = processJob(client, job, dryRun).finally(() => {
         activeTasks.delete(jobId);
+        activeTaskStartedAt.delete(jobId);
       });
       activeTasks.set(jobId, taskPromise);
+      activeTaskStartedAt.set(jobId, Date.now());
     }
 
     // Wait for at least one task to complete
@@ -110,6 +139,24 @@ export async function drainQueue(client: ProtonDriveClient, dryRun: boolean): Pr
 /** Extract error message from unknown error */
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Wrap async operations to prevent hung workers from freezing the processor pool. */
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`${operation} timed out after ${Math.floor(timeoutMs / 1000)}s`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
 }
 
 /** Helper to delete a node, throws on failure */
@@ -168,6 +215,8 @@ function buildChildRemotePath(
  * Call this periodically to keep the task pool saturated.
  */
 export function processAvailableJobs(client: ProtonDriveClient, dryRun: boolean): void {
+  cleanupStaleActiveTasks();
+
   // Calculate available capacity
   const availableSlots = syncConcurrency - activeTasks.size;
   if (availableSlots <= 0) return;
@@ -182,9 +231,11 @@ export function processAvailableJobs(client: ProtonDriveClient, dryRun: boolean)
     // Start the job and track it
     const taskPromise = processJob(client, job, dryRun).finally(() => {
       activeTasks.delete(jobId);
+      activeTaskStartedAt.delete(jobId);
     });
 
     activeTasks.set(jobId, taskPromise);
+    activeTaskStartedAt.set(jobId, Date.now());
   }
 }
 
@@ -199,6 +250,8 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
   }
 
   try {
+    const opLabel = `Job ${id} (${eventType}) ${remotePath}`;
+
     switch (eventType) {
       case SyncEventType.DELETE: {
         const config = getConfig();
@@ -210,7 +263,11 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
         const mapping = getNodeMapping(localPath, remotePath);
         const isDirectory = mapping?.isDirectory ?? false;
 
-        const { existed, trashed } = await deleteNodeOrThrow(client, remotePath, dryRun, trashOnly);
+        const { existed, trashed } = await withTimeout(
+          deleteNodeOrThrow(client, remotePath, dryRun, trashOnly),
+          JOB_EXECUTION_TIMEOUT_MS,
+          opLabel
+        );
         if (!existed) {
           logger.info(`Already gone: ${remotePath}`);
         } else {
@@ -234,11 +291,10 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
       case SyncEventType.UPDATE: {
         const typeLabel = eventType === SyncEventType.CREATE_FILE ? 'Creating' : 'Updating';
         logger.info(`${typeLabel}: ${remotePath}`);
-        const { nodeUid, parentNodeUid, isDirectory, contentSha1 } = await createNodeOrThrow(
-          client,
-          localPath,
-          remotePath,
-          dryRun
+        const { nodeUid, parentNodeUid, isDirectory, contentSha1 } = await withTimeout(
+          createNodeOrThrow(client, localPath, remotePath, dryRun),
+          JOB_EXECUTION_TIMEOUT_MS,
+          opLabel
         );
         logger.info(`Success: ${remotePath} -> ${nodeUid}`);
         // Store node mapping and file state for future operations
@@ -256,11 +312,10 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
         logger.info(`Creating directory: ${remotePath}`);
 
         // Step 1: Create the directory on remote
-        const { nodeUid, parentNodeUid } = await createNodeOrThrow(
-          client,
-          localPath,
-          remotePath,
-          dryRun
+        const { nodeUid, parentNodeUid } = await withTimeout(
+          createNodeOrThrow(client, localPath, remotePath, dryRun),
+          JOB_EXECUTION_TIMEOUT_MS,
+          opLabel
         );
         logger.info(`Directory created: ${remotePath} -> ${nodeUid}`);
 
@@ -275,7 +330,11 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
 
         // Step 3: Scan children and queue jobs for unsynced items
         const excludePatterns = getConfig().exclude_patterns;
-        const fsState = await scanDirectory(localPath, excludePatterns);
+        const fsState = await withTimeout(
+          scanDirectory(localPath, excludePatterns),
+          JOB_EXECUTION_TIMEOUT_MS,
+          `${opLabel} (scan children)`
+        );
 
         db.transaction((tx) => {
           for (const [childPath, stats] of fsState) {
@@ -337,6 +396,25 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error);
+    const lowerError = errorMessage.toLowerCase();
+
+    // Idempotency guard:
+    // If a CREATE_FILE hits "already exists", the target object is already present remotely.
+    // Treat as success to avoid endless retry/block/re-enqueue loops on immutable Kopia chunks.
+    if (
+      eventType === SyncEventType.CREATE_FILE &&
+      lowerError.includes('a file or folder with that name already exists')
+    ) {
+      logger.warn(`Job ${id} (${localPath}) conflict on create, treating as synced: ${errorMessage}`);
+      db.transaction((tx) => {
+        if (job.changeToken) {
+          storeFileState(localPath, job.changeToken, null, dryRun, tx);
+        }
+        markJobSynced(id, localPath, dryRun, tx);
+      });
+      return;
+    }
+
     const { category: errorCategory, maxRetries } = categorizeError(errorMessage);
 
     if (nRetries >= maxRetries && maxRetries !== Infinity) {

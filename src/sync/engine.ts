@@ -27,7 +27,7 @@ import {
   compareWithStoredChangeTokens,
   type FileChange,
 } from './watcher.js';
-import { enqueueJob, cleanupOrphanedJobs, getPendingJobCount } from './queue.js';
+import { enqueueJob, cleanupOrphanedJobs, getPendingJobCount, recoverBlockedJobs } from './queue.js';
 import {
   processAvailableJobs,
   waitForActiveTasks,
@@ -533,6 +533,7 @@ function startJobProcessorLoop(client: ProtonDriveClient, dryRun: boolean): Proc
   let running = true;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let loopCount = 0;
+  const blockedRecoveryIntervalLoops = Math.ceil(60_000 / JOB_POLL_INTERVAL_MS); // ~1 minute
   const processLoop = (): void => {
     loopCount++;
 
@@ -548,6 +549,10 @@ function startJobProcessorLoop(client: ProtonDriveClient, dryRun: boolean): Proc
     sendStatusToDashboard({ paused });
 
     if (!paused) {
+      // Periodically recover blocked jobs caused by transient remote/local races.
+      if (loopCount % blockedRecoveryIntervalLoops === 0) {
+        recoverBlockedJobs(dryRun);
+      }
       processAvailableJobs(client, dryRun);
     }
 
