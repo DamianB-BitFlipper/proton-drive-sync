@@ -3,5 +3,5 @@ dist/
 .DS_Store
 *.log
 *.bun-build
-
+docker/.env
 my_*
