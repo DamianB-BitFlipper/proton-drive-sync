@@ -40,18 +40,12 @@ Run Proton Drive Sync in Docker with support for Linux x86_64 and ARM64.
    - ${SYNC_DIR_2}:/data/photos
    ```
 
-3. **Start the container**
-
-   ```bash
-   docker compose up -d
-   ```
-
-4. **Authenticate with Proton**
+3. **Authenticate with Proton**
 
    **Option A: Interactive** (supports 2FA)
 
    ```bash
-   docker exec -it proton-drive-sync proton-drive-sync auth
+   docker compose run -it --rm proton-drive-sync proton-drive-sync auth
    ```
 
    Follow the prompts to enter your Proton credentials and 2FA code if enabled.
@@ -60,11 +54,14 @@ Run Proton Drive Sync in Docker with support for Linux x86_64 and ARM64.
 
    Uncomment and set `PROTON_USERNAME` and `PROTON_PASSWORD` in your `.env` file, then restart:
 
+   The app will authenticate automatically on startup. Note: this does **not** work with accounts that have 2FA/TOTP enabled.
+
+4. **Start the container**
+
    ```bash
    docker compose up -d
    ```
 
-   The app will authenticate automatically on startup. Note: this does **not** work with accounts that have 2FA/TOTP enabled.
 
 5. **Configure sync directories**
 
