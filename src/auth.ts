@@ -1435,7 +1435,10 @@ export function createProtonAccount(
 
   return {
     async getOwnPrimaryAddress(): Promise<OwnAddress> {
-      const primaryAddress = session.addresses?.find((a) => a.Type === 1 && a.Status === 1);
+      // Find primary address: prefer Type 1 (original), fall back to any enabled address with keys
+      const primaryAddress =
+        session.addresses?.find((a) => a.Type === 1 && a.Status === 1 && a.keys.length > 0) ||
+        session.addresses?.find((a) => a.Status === 1 && a.keys.length > 0);
       if (!primaryAddress) {
         throw new Error('No primary address found');
       }
