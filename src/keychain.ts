@@ -8,7 +8,6 @@
  * - Linux without KEYRING_PASSWORD: libsecret via keytar (for desktop environments)
  */
 
-import keytar from 'keytar';
 import { logger } from './logger.js';
 import type { PasswordMode } from './auth.js';
 import {
@@ -28,6 +27,13 @@ const DEFAULT_KEYRING_PASSWORD = 'proton-drive-sync';
  */
 function useFileStorage(): boolean {
   return process.platform === 'linux';
+}
+
+/**
+ * Dynamically import keytar to avoid loading libsecret on Linux when it's not needed.
+ */
+async function getKeytar() {
+  return (await import('keytar')).default;
 }
 
 /**
@@ -62,6 +68,7 @@ export async function getStoredCredentials(): Promise<StoredCredentials | null> 
     }
 
     // macOS/Windows/Linux desktop: use keytar
+    const keytar = await getKeytar();
     const data = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
     if (!data) return null;
     return JSON.parse(data) as StoredCredentials;
@@ -79,6 +86,7 @@ export async function storeCredentials(credentials: StoredCredentials): Promise<
   }
 
   // macOS/Windows/Linux desktop: use keytar
+  const keytar = await getKeytar();
   await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, JSON.stringify(credentials));
 }
 
@@ -91,6 +99,7 @@ export async function deleteStoredCredentials(): Promise<void> {
     }
 
     // macOS/Windows/Linux desktop: use keytar
+    const keytar = await getKeytar();
     await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
   } catch {
     // Ignore - may not exist

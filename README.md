@@ -157,8 +157,8 @@ See **[DOCKER_SETUP.md](DOCKER_SETUP.md)** for running with Docker Compose on Li
 cd docker/
 cp .env.example .env
 # Edit .env with KEYRING_PASSWORD and sync directory paths
+docker compose run -it --rm proton-drive-sync proton-drive-sync auth
 docker compose up -d
-docker exec -it proton-drive-sync proton-drive-sync auth
 ```
 
 ### Coming Soon
