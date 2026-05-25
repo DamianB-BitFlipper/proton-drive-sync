@@ -899,16 +899,6 @@ export class ProtonAuth {
             }
           }
 
-          // Fallback to the user's key password - only valid for single-password mode
-          if (!addressKeyPassword) {
-            if (passwordMode === 2) {
-              throw new Error(
-                `Failed to derive passphrase for address key ${key.ID} in two-password mode. Re-authentication required.`
-              );
-            }
-            addressKeyPassword = keyPassword;
-          }
-
           // Verify passphrase by attempting to decrypt the address key (two-password mode only)
           if (addressKeyPassword && passwordMode === 2) {
             try {
