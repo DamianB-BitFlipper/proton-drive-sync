@@ -637,8 +637,27 @@ async function apiRequest<T extends ApiResponse>(
     options.body = JSON.stringify(data);
   }
 
+  logger.debug(`API request: ${method} ${url}`);
+  logger.debug(`Request headers: ${JSON.stringify(options.headers)}`);
+  if (options.body) {
+    logger.debug(`Request body: ${options.body}`);
+  }
+
   const response = await fetch(url, options);
-  const json = (await response.json()) as T;
+  const responseText = await response.text();
+  let json: T;
+
+  try {
+    json = JSON.parse(responseText) as T;
+  } catch (parseError) {
+    const error = new Error(`Failed to parse API response: ${parseError}`) as ApiError;
+    error.status = response.status;
+    error.response = { Code: 0, Error: responseText } as ApiResponse;
+    throw error;
+  }
+
+  logger.debug(`API response status: ${response.status}`);
+  logger.debug(`API response body: ${JSON.stringify(json)}`);
 
   if (!response.ok || json.Code !== 1000) {
     const error = new Error(json.Error || `API error: ${response.status}`) as ApiError;
@@ -817,6 +836,12 @@ export class ProtonAuth {
     }
     if (response.RefreshToken) {
       this.session.RefreshToken = response.RefreshToken;
+    }
+
+    // If the server accepted 2FA but did not return new tokens, refresh now
+    if (!response.AccessToken && !response.RefreshToken && this.session.RefreshToken) {
+      logger.debug('2FA succeeded without new tokens; refreshing access token.');
+      await this.refreshToken();
     }
 
     // Check if this is a two-password mode account
