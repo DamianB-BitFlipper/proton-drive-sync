@@ -143,7 +143,9 @@ export function getCommand(key: string | undefined, options: GetOptions): void {
     if (config.sync_dirs && config.sync_dirs.length > 0) {
       console.log('\n  sync_dirs:');
       for (const dir of config.sync_dirs) {
-        console.log(`    - ${dir.source_path} -> ${dir.remote_root}`);
+        console.log(
+          `    - ${dir.source_path} -> ${dir.remote_root} (${dir.two_way ? 'two-way' : 'backup-only'})`
+        );
       }
     } else {
       console.log('\n  sync_dirs: (none configured)');
@@ -405,7 +407,9 @@ function listSyncDirs(): void {
 
   console.log('Sync directories:\n');
   for (const dir of config.sync_dirs) {
-    console.log(`  ${dir.source_path} -> ${dir.remote_root}`);
+    console.log(
+      `  ${dir.source_path} -> ${dir.remote_root} (${dir.two_way ? 'two-way' : 'backup-only'})`
+    );
   }
 }
 
@@ -435,7 +439,7 @@ function addSyncDir(sourcePath: string, remoteRoot: string): void {
     return;
   }
 
-  syncDirs.push({ source_path: sourcePath, remote_root: remoteRoot });
+  syncDirs.push({ source_path: sourcePath, remote_root: remoteRoot, two_way: false });
   config.sync_dirs = syncDirs;
   saveConfigRaw(config);
   console.log(`Added sync directory: ${sourcePath} -> ${remoteRoot}`);
@@ -468,7 +472,9 @@ async function syncDirInteractive(): Promise<void> {
     } else {
       console.log('Current sync directories:');
       for (const dir of syncDirs) {
-        console.log(`  ${dir.source_path} -> ${dir.remote_root}`);
+        console.log(
+          `  ${dir.source_path} -> ${dir.remote_root} (${dir.two_way ? 'two-way' : 'backup-only'})`
+        );
       }
     }
     console.log('');

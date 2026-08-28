@@ -5,6 +5,7 @@
  */
 
 export { createNode } from './create.js';
+export { downloadNode } from './download.js';
 export { deleteNode } from './delete.js';
 export { relocateNode, getParentFolderUid } from './rename.js';
 export {
@@ -33,5 +34,8 @@ export type {
   DeleteOperationResult,
   ParsedPath,
   ApiError,
+  RemoteEvent,
+  FileDownloader,
+  DownloadController,
 } from './types.js';
 export type { RelocateResult } from './rename.js';

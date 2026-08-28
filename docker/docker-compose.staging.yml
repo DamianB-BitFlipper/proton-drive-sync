@@ -1,0 +1,28 @@
+services:
+  proton-drive-sync-staging:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: proton-drive-sync:staging
+    container_name: proton-drive-sync-staging
+    restart: "no"
+
+    environment:
+      KEYRING_PASSWORD: ${KEYRING_PASSWORD}
+      TZ: ${TZ:-UTC}
+
+    volumes:
+      - staging_config:/config/proton-drive-sync
+      - staging_state:/state/proton-drive-sync
+      - ${STAGING_SYNC_DIR:-../.staging-sync}:/data/staging
+
+    ports:
+      - "${STAGING_DASHBOARD_PORT:-4243}:4242"
+
+    stop_grace_period: 30s
+
+volumes:
+  staging_config:
+    name: proton-drive-sync-staging-config
+  staging_state:
+    name: proton-drive-sync-staging-state

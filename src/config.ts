@@ -20,6 +20,7 @@ import { registerSignalHandler, sendSignal } from './signals.js';
 export interface SyncDir {
   source_path: string;
   remote_root: string;
+  two_way: boolean;
 }
 
 export interface ExcludePattern {
@@ -173,6 +174,11 @@ function parseConfig(throwOnError: boolean): Config | null {
         dir.remote_root = '/';
       } else if (!dir.remote_root.startsWith('/')) {
         dir.remote_root = '/' + dir.remote_root;
+      }
+
+      // Existing configurations remain backup-only unless explicitly enabled.
+      if (dir.two_way === undefined) {
+        dir.two_way = false;
       }
 
       if (!existsSync(dir.source_path)) {

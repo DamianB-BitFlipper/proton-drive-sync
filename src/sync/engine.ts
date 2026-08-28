@@ -50,6 +50,7 @@ import {
   cleanupOrphanedNodeMappings,
 } from './nodes.js';
 import { isPathExcluded } from './exclusions.js';
+import { startRemoteWatcher } from './remoteWatcher.js';
 import {
   JOB_POLL_INTERVAL_MS,
   SHUTDOWN_TIMEOUT_MS,
@@ -368,6 +369,9 @@ export async function runWatchMode(options: SyncOptions): Promise<void> {
   // Set up file watching for future changes
   await setupWatchSubscriptions(config, createChangeHandler());
 
+  // Subscribe to remote Drive events and queue inbound downloads.
+  let remoteWatcherHandle = await startRemoteWatcherSafely(client, config);
+
   // Signal that startup is complete (daemon is ready)
   setFlag(FLAGS.STARTUP_READY);
 
@@ -378,6 +382,7 @@ export async function runWatchMode(options: SyncOptions): Promise<void> {
 
   onConfigChange('sync_dirs', async () => {
     logger.info('sync_dirs changed, reinitializing watch subscriptions...');
+    remoteWatcherHandle.stop();
     const newConfig = getConfig();
     db.transaction((tx) => {
       cleanupOrphanedJobs(dryRun, tx);
@@ -393,6 +398,7 @@ export async function runWatchMode(options: SyncOptions): Promise<void> {
     }
 
     await setupWatchSubscriptions(newConfig, createChangeHandler());
+    remoteWatcherHandle = await startRemoteWatcherSafely(client, newConfig);
   });
 
   // Start the job processor loop
@@ -427,7 +433,20 @@ export async function runWatchMode(options: SyncOptions): Promise<void> {
 
   // Cleanup
   reconciliationHandle.stop();
+  remoteWatcherHandle.stop();
   await processorHandle.stop();
+}
+
+async function startRemoteWatcherSafely(
+  client: ProtonDriveClient,
+  config: Config
+): Promise<{ stop: () => void }> {
+  try {
+    return await startRemoteWatcher(client, config);
+  } catch (error) {
+    logger.error(`Remote synchronization unavailable: ${error}`);
+    return { stop: () => {} };
+  }
 }
 
 // ============================================================================

@@ -23,6 +23,9 @@ import migration0005 from './migrations/0005_opposite_venom.sql' with { type: 't
 import migration0006 from './migrations/0006_content_hash_tracking.sql' with { type: 'text' };
 import migration0007 from './migrations/0007_overlapping_sync_dirs.sql' with { type: 'text' };
 import migration0008 from './migrations/0008_file_state_sha1.sql' with { type: 'text' };
+import migration0009 from './migrations/0009_remote_event_state.sql' with { type: 'text' };
+import migration0010 from './migrations/0010_conflict_metadata.sql' with { type: 'text' };
+import migration0011 from './migrations/0011_base_snapshots.sql' with { type: 'text' };
 
 const migrations = [
   { id: '0000_hot_whizzer', sql: migration0000 },
@@ -34,6 +37,9 @@ const migrations = [
   { id: '0006_content_hash_tracking', sql: migration0006 },
   { id: '0007_overlapping_sync_dirs', sql: migration0007 },
   { id: '0008_file_state_sha1', sql: migration0008 },
+  { id: '0009_remote_event_state', sql: migration0009 },
+  { id: '0010_conflict_metadata', sql: migration0010 },
+  { id: '0011_base_snapshots', sql: migration0011 },
 ];
 
 // ============================================================================

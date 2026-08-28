@@ -10,4 +10,5 @@ export type JobCounts = {
   processing: number;
   synced: number;
   blocked: number;
+  conflicts: number;
 };

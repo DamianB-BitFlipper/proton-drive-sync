@@ -3,5 +3,7 @@ dist/
 .DS_Store
 *.log
 *.bun-build
+.env.staging
+.staging-sync/
 
 my_*

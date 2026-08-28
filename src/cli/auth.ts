@@ -16,6 +16,7 @@ import { storeCredentials, deleteStoredCredentials, getStoredCredentials } from 
 import type { StoredCredentials } from '../keychain.js';
 import type { ProtonDriveClient, ApiError } from '../proton/types.js';
 import { logger } from '../logger.js';
+  import type { NodeData } from '../proton/types.js';
 
 // Re-export for use in start.ts
 export { getStoredCredentials } from '../keychain.js';
@@ -50,7 +51,7 @@ async function createProtonDriveClientFromSession(
     metricHandlers: [], // No metrics logging
   });
 
-  const client = new sdk.ProtonDriveClient({
+  const sdkClient = new sdk.ProtonDriveClient({
     httpClient,
     entitiesCache: new sdk.MemoryCache(),
     cryptoCache: new sdk.MemoryCache(),
@@ -62,9 +63,55 @@ async function createProtonDriveClientFromSession(
     telemetry,
   });
 
-  return client as unknown as ProtonDriveClient;
+  const getSdkRootFolder = sdkClient.getMyFilesRootFolder.bind(sdkClient);
+  const iterateSdkFolderChildren = sdkClient.iterateFolderChildren.bind(sdkClient);
+  const getSdkNode = sdkClient.getNode.bind(sdkClient);
+  Object.defineProperty(sdkClient, 'getMyFilesRootFolder', {
+    value: async () => {
+      const root = await getSdkRootFolder();
+      return { ok: true, value: { uid: root.uid } };
+    },
+  });
+  Object.defineProperty(sdkClient, 'iterateFolderChildren', {
+    value: async function* (folderUid: string) {
+      for await (const node of iterateSdkFolderChildren(folderUid)) {
+          yield { ok: true, value: normalizeSdkNode(node) };
+      }
+    },
+  });
+  Object.defineProperty(sdkClient, 'getNode', {
+    value: async (nodeUid: string) => {
+      const node = await getSdkNode(nodeUid);
+        return { ok: true, value: normalizeSdkNode(node) };
+    },
+  });
+
+  return sdkClient as unknown as ProtonDriveClient;
 }
 
+  function normalizeSdkNode(node: unknown): NodeData {
+    if (!node || typeof node !== 'object') {
+      throw new Error('SDK returned an invalid node');
+    }
+
+    const record = node as Record<string, unknown>;
+    const nameField = record.name;
+    let name: string;
+    if (typeof nameField === 'string') {
+      name = nameField;
+    } else if (
+      nameField &&
+      typeof nameField === 'object' &&
+      'value' in nameField &&
+      typeof nameField.value === 'string'
+    ) {
+      name = nameField.value;
+    } else {
+      throw new Error('SDK returned a node with an invalid name');
+    }
+
+    return { ...record, name } as unknown as NodeData;
+  }
 /**
  * Create a ProtonDriveClient from username/password
  * Returns both the client and credentials for storage

@@ -447,7 +447,8 @@ export async function setupWatchSubscriptions(
           pollInterval: 100,
         },
         // Use closure to capture watchDir and excludePatterns for exclusion check
-        ignored: (path: string) => isPathExcluded(path, watchDir, excludePatterns),
+        ignored: (path: string) =>
+          path.includes('.proton-download-') || isPathExcluded(path, watchDir, excludePatterns),
       });
 
       watcher

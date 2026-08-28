@@ -52,6 +52,16 @@ export const AddDirectoryModal: FC = () => {
             />
           </div>
 
+          <label class="mb-6 flex items-center gap-3 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              name="two_way"
+              value="true"
+              class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-proton focus:ring-proton"
+            />
+            <span>Enable two-way sync for this folder</span>
+          </label>
+
           {/* Buttons */}
           <div class="flex justify-end gap-3">
             <button

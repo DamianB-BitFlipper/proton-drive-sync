@@ -7,6 +7,7 @@
 
 import { basename, dirname } from 'path';
 import type { BaseProtonDriveClient, NodeData, ParsedPath } from './types.js';
+import { logger } from '../logger.js';
 
 // Re-export types for convenience
 export type { BaseProtonDriveClient, ParsedPath } from './types.js';
@@ -114,10 +115,20 @@ export async function findFolderByName(
   folderName: string
 ): Promise<string | null> {
   let foundUid: string | null = null;
+  const childNames: string[] = [];
   for await (const node of client.iterateFolderChildren(parentFolderUid)) {
+    if (node.ok && node.value) {
+      childNames.push(`${node.value.name} (${node.value.type})`);
+    }
     if (!foundUid && node.ok && node.value?.type === 'folder' && node.value.name === folderName) {
       foundUid = node.value.uid;
     }
+  }
+  if (!foundUid) {
+    logger.warn(
+      `Remote folder "${folderName}" not found under ${parentFolderUid}. ` +
+        `Visible children: ${childNames.join(', ') || 'none'}`
+    );
   }
   return foundUid;
 }

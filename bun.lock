@@ -6,7 +6,7 @@
       "name": "proton-drive-sync",
       "dependencies": {
         "@inquirer/prompts": "^8.0.1",
-        "@protontech/drive-sdk": "^0.7.0",
+        "@protontech/drive-sdk": "0.21.0",
         "bcryptjs": "^3.0.3",
         "chokidar": "^5.0.0",
         "commander": "^14.0.2",
@@ -170,6 +170,8 @@
 
     "@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
 
+    "@openpgp/web-stream-tools": ["@openpgp/web-stream-tools@0.3.1", "", { "peerDependencies": { "@types/node": ">=18.0.0", "typescript": ">=4.7" }, "optionalPeers": ["@types/node", "typescript"] }, "sha512-EV+VQ4Dr8b+JmlGnc74FLgx7EhLyydOr4j6s6Hp+2scQh6sLQMs2h+1oEYUIslXcQPicWKG5ZQx+/dua0dgPWA=="],
+
     "@parcel/watcher": ["@parcel/watcher@2.5.1", "", { "dependencies": { "detect-libc": "^1.0.3", "is-glob": "^4.0.3", "micromatch": "^4.0.5", "node-addon-api": "^7.0.0" }, "optionalDependencies": { "@parcel/watcher-android-arm64": "2.5.1", "@parcel/watcher-darwin-arm64": "2.5.1", "@parcel/watcher-darwin-x64": "2.5.1", "@parcel/watcher-freebsd-x64": "2.5.1", "@parcel/watcher-linux-arm-glibc": "2.5.1", "@parcel/watcher-linux-arm-musl": "2.5.1", "@parcel/watcher-linux-arm64-glibc": "2.5.1", "@parcel/watcher-linux-arm64-musl": "2.5.1", "@parcel/watcher-linux-x64-glibc": "2.5.1", "@parcel/watcher-linux-x64-musl": "2.5.1", "@parcel/watcher-win32-arm64": "2.5.1", "@parcel/watcher-win32-ia32": "2.5.1", "@parcel/watcher-win32-x64": "2.5.1" } }, "sha512-dfUnCxiN9H4ap84DvD2ubjw+3vUNpstxa0TneY/Paat8a3R4uQZDLSvWjmznAY/DoahqTHl9V46HF/Zs3F29pg=="],
 
     "@parcel/watcher-android-arm64": ["@parcel/watcher-android-arm64@2.5.1", "", { "os": "android", "cpu": "arm64" }, "sha512-KF8+j9nNbUN8vzOFDpRMsaKBHZ/mcjEjMToVMJOhTozkDonQFFrRcfdLWn6yWKCmJKmdVxSgHiYvTCef4/qcBA=="],
@@ -200,7 +202,9 @@
 
     "@pkgr/core": ["@pkgr/core@0.2.9", "", {}, "sha512-QNqXyfVS2wm9hweSYD2O7F0G06uurj9kZ96TRQE5Y9hU7+tgdZwIkbAKc5Ocy1HxEY2kuDQa6cQ1WRs/O5LFKA=="],
 
-    "@protontech/drive-sdk": ["@protontech/drive-sdk@0.7.0", "", { "dependencies": { "@noble/hashes": "1.8.0", "bcryptjs": "2.4.3", "ttag": "1.8.12" } }, "sha512-7Kazsb0jJEeY40FU7a4aGI6hdGCx9Op+tR/m7H/pidunI3hT6vqK/fQkSyoN8FcdHZJh3EHXbMHCN0aRGWffLg=="],
+    "@protontech/crypto": ["@protontech/crypto@2.1.3", "", { "dependencies": { "@noble/hashes": "^2.3.0", "@openpgp/web-stream-tools": "~0.3.1", "bcryptjs": "^3.0.3", "comlink": "^4.4.2", "core-js": "^3.50.0", "openpgp": "npm:@protontech/openpgp@~6.3.1" } }, "sha512-Sbf/7yqwIE40L7AzZvRPfCWvDaHJ3GzELF3BhvhoVpGPImUxkbjRsJscGq/+Amglh3zAWaN1z2mCPoC1uUl2ZA=="],
+
+    "@protontech/drive-sdk": ["@protontech/drive-sdk@0.21.0", "", { "dependencies": { "@noble/hashes": "^1.8.0", "ttag": "^1.8.7" }, "optionalDependencies": { "@xmldom/xmldom": "^0.9.10", "exifreader": "^4.39.1" }, "peerDependencies": { "@protontech/crypto": "^2.0.0" } }, "sha512-WdJ+PT7x6zKHUHJZJyyVOHrODD08Qdfq4PvGm4g3EG8B3/aNdlfU90hFGsezkucYjySXCaHt/BEbnErJN13zDw=="],
 
     "@so-ric/colorspace": ["@so-ric/colorspace@1.1.6", "", { "dependencies": { "color": "5.0.3", "text-hex": "1.0.0" } }, "sha512-/KiKkpHNOBgkFJwu9sh48LkHSMYGyuTcSFK/qMBdnOAlrRJzRSXAOFB5qwzaVQuDl8wAvHVMkaASQDReTahxuw=="],
 
@@ -266,6 +270,8 @@
 
     "@typescript-eslint/visitor-keys": ["@typescript-eslint/visitor-keys@8.48.0", "", { "dependencies": { "@typescript-eslint/types": "8.48.0", "eslint-visitor-keys": "4.2.1" } }, "sha512-T0XJMaRPOH3+LBbAfzR2jalckP1MSG/L9eUtY0DEzUyVaXJ/t6zN0nR7co5kz0Jko/nkSYCBRkz1djvjajVTTg=="],
 
+    "@xmldom/xmldom": ["@xmldom/xmldom@0.9.12", "", {}, "sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A=="],
+
     "acorn": ["acorn@8.15.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-NZyJarBfL7nWwIq+FDL6Zp/yHEhePMNnnJ0y3qfieCrmNvYct8uvtiV41UvlSe6apAfk0fY1FbWx+NwfmpvtTg=="],
 
     "acorn-jsx": ["acorn-jsx@5.3.2", "", { "peerDependencies": { "acorn": "8.15.0" } }, "sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ=="],
@@ -322,9 +328,13 @@
 
     "color-string": ["color-string@2.1.4", "", { "dependencies": { "color-name": "2.1.0" } }, "sha512-Bb6Cq8oq0IjDOe8wJmi4JeNn763Xs9cfrBcaylK1tPypWzyoy2G3l90v9k64kjphl/ZJjPIShFztenRomi8WTg=="],
 
+    "comlink": ["comlink@4.4.2", "", {}, "sha512-OxGdvBmJuNKSCMO4NTl1L47VRp6xn2wG4F/2hYzB6tiCb709otOxtEYCSvK80PtjODfXXZu8ds+Nw5kVCjqd2g=="],
+
     "commander": ["commander@14.0.2", "", {}, "sha512-TywoWNNRbhoD0BXs1P3ZEScW8W5iKrnbithIl0YH+uCmBd0QpPOA8yc82DS3BIE5Ma6FnBVUsJ7wVUDz4dvOWQ=="],
 
     "concat-map": ["concat-map@0.0.1", "", {}, "sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg=="],
+
+    "core-js": ["core-js@3.50.0", "", {}, "sha512-BRWgOLKkFeCgRudR6zrs8p9XJZcE14grzKMMssoYrk6krtuEZ7MTKPIY5RzOnqsEKIR9kst7wNzphttraT+Yqw=="],
 
     "cross-spawn": ["cross-spawn@7.0.6", "", { "dependencies": { "path-key": "3.1.1", "shebang-command": "2.0.0", "which": "2.0.2" } }, "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA=="],
 
@@ -377,6 +387,8 @@
     "estraverse": ["estraverse@5.3.0", "", {}, "sha512-MMdARuVEQziNTeJD8DgMqmhwR11BRQ/cBP+pLtYdSTnf3MIO8fFeiINEbX36ZdNlfU/7A9f3gUw49B3oQsvwBA=="],
 
     "esutils": ["esutils@2.0.3", "", {}, "sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g=="],
+
+    "exifreader": ["exifreader@4.44.0", "", { "optionalDependencies": { "@xmldom/xmldom": "^0.9.10" }, "bin": { "exifreader": "bin/cli.js" } }, "sha512-NviP4AQgrZHiNZT8IEsXtyaAKLkc0C55dfQ8fyaAXiL59EJLDdsvP/hZhAfTJpdVuHDGHU7GuUZ1qrJtINckvw=="],
 
     "expand-template": ["expand-template@2.0.3", "", {}, "sha512-XYfuKMvj4O35f/pOXLObndIRvyQ+/+6AhODh+OKWj9S9498pHHn/IMszH+gt0fBCRWMNfk1ZSp5x3AifmnI2vg=="],
 
@@ -676,7 +688,9 @@
 
     "@parcel/watcher/node-addon-api": ["node-addon-api@7.1.1", "", {}, "sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ=="],
 
-    "@protontech/drive-sdk/bcryptjs": ["bcryptjs@2.4.3", "", {}, "sha512-V/Hy/X9Vt7f3BbPJEi8BdVFMByHi+jNXrYkW3huaybV/kQ0KJg0Y6PkEMbn+zeT+i+SiKZ/HMqJGIIt4LZDqNQ=="],
+    "@protontech/crypto/@noble/hashes": ["@noble/hashes@2.4.0", "", {}, "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA=="],
+
+    "@protontech/crypto/openpgp": ["@protontech/openpgp@6.3.1", "", { "peerDependencies": { "@openpgp/web-stream-tools": "~0.3.0" }, "optionalPeers": ["@openpgp/web-stream-tools"] }, "sha512-+NUfnF0rbw553xwT09YROb3TBmitumSSgOEx3eQh8LOx7CAKQzo2CLfsbBQz7KFc3+d9iMIMOKLrLzerYCtLIw=="],
 
     "@tailwindcss/oxide-wasm32-wasi/@emnapi/core": ["@emnapi/core@1.7.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.1.0", "tslib": "^2.4.0" }, "bundled": true }, "sha512-o1uhUASyo921r2XtHYOHy7gdkGLge8ghBEQHMWmyJFoXlpU58kIrhhN3w26lpQb6dspetweapMn2CSNwQ8I4wg=="],
 

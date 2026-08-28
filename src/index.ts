@@ -36,6 +36,7 @@ import { statusCommand } from './cli/status.js';
 import { dashboardCommand } from './cli/dashboard.js';
 import { reconcileCommand } from './cli/reconcile.js';
 import { setupCommand } from './cli/setup.js';
+import { conflictsCommand } from './cli/conflicts.js';
 
 const { version } = (await import('../package.json')).default;
 
@@ -190,5 +191,28 @@ program
   .command('setup')
   .description('Interactive setup wizard for first-time configuration')
   .action(setupCommand);
+
+program
+  .command('conflicts')
+  .description('List or resolve file conflicts')
+  .option('--resolve <id>', 'Resolve a conflict by ID')
+  .option('--local', 'Keep the preserved local version and upload it')
+  .option('--remote', 'Keep the remote version and remove the preserved local version')
+  .option('--retry <id>', 'Retry a merge using the preserved local version')
+  .action(conflictsCommand);
+
+const mergeCommand = program.command('merge').description('Manage three-way merges');
+mergeCommand
+  .command('accept <id>')
+  .description('Accept the preserved local version and upload it')
+  .action((id) => conflictsCommand({ resolve: id, local: true }));
+mergeCommand
+  .command('reject <id>')
+  .description('Reject the preserved local version and keep the remote version')
+  .action((id) => conflictsCommand({ resolve: id, remote: true }));
+mergeCommand
+  .command('retry <id>')
+  .description('Retry the merge using the preserved local version')
+  .action((id) => conflictsCommand({ retry: id }));
 
 program.parse();
