@@ -83,7 +83,6 @@ installation.
 From the repository root (`proton-drive-sync`):
 
 ```bash
-cd /home/marie/Code/damien_proton_drive/proton-drive-sync
 cp docker/.env.staging.example docker/.env.staging
 openssl rand -base64 32
 # Put the generated value in docker/.env.staging as KEYRING_PASSWORD
@@ -102,9 +101,9 @@ docker compose -f docker/docker-compose.staging.yml --env-file docker/.env.stagi
 In the dashboard, add `/data/staging` and use a dedicated Proton Drive folder,
 for example `/proton-drive-sync-staging`. The host directory configured by
 `STAGING_SYNC_DIR` is always available inside the container as `/data/staging`.
-For example, to expose `/home/marie/Proton_Staging`, set
-`STAGING_SYNC_DIR=/home/marie/Proton_Staging` in `docker/.env.staging`, recreate
-the container, and add `/data/staging` in the dashboard. The staging instance uses separate
+For example, to expose an existing host directory, set
+`STAGING_SYNC_DIR=/path/to/proton-drive-sync-staging` in `docker/.env.staging`,
+recreate the container, and add `/data/staging` in the dashboard. The staging instance uses separate
 Docker volumes named `proton-drive-sync-staging-config` and
 `proton-drive-sync-staging-state`; it does not read the installed client's
 configuration or database.
