@@ -1,5 +1,6 @@
-import { dirname, extname, join } from 'path';
+import { extname, join } from 'path';
 import { mkdir, mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
 
 export type MergeStatus = 'merged' | 'conflict' | 'unsupported' | 'failed';
 
@@ -121,7 +122,8 @@ export class LibreOfficeMergeDriver implements MergeDriver {
       return { status: 'unsupported', details: 'LibreOffice is not installed.' };
     }
 
-    const temporaryDirectory = await mkdtemp(join(dirname(input.outputPath), '.odt-merge-'));
+    // Keep the working profile/text dir out of the synced folder (never inside dirname(outputPath))
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'proton-drive-sync-odt-merge-'));
     const textDirectory = join(temporaryDirectory, 'text');
     const port = String(40000 + Math.floor(Math.random() * 2000));
     const profileDirectory = join(temporaryDirectory, 'profile');
