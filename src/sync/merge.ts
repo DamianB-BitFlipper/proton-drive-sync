@@ -218,11 +218,10 @@ export class BinaryMergeDriver implements MergeDriver {
   }
 }
 
-const mergeDrivers: MergeDriver[] = [
-  new TextMergeDriver(),
-  new LibreOfficeMergeDriver(),
-  new BinaryMergeDriver(),
-];
+// LibreOfficeMergeDriver is intentionally not registered: it only preserves
+// plain text, silently discarding formatting, images, and page layout, which
+// is unsafe as an automatic merge for real document conflicts.
+const mergeDrivers: MergeDriver[] = [new TextMergeDriver(), new BinaryMergeDriver()];
 
 export async function mergeThreeWay(input: MergeInput): Promise<MergeResult> {
   const driver = mergeDrivers.find((candidate) => candidate.canHandle(input));

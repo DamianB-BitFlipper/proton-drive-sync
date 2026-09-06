@@ -143,6 +143,7 @@ async function createNodeOrThrow(
   parentNodeUid: string;
   isDirectory: boolean;
   contentSha1: string | null;
+  revisionUid: string | null;
 }> {
   const result = await createNode(client, localPath, remotePath, dryRun);
   if (!result.success || !result.nodeUid) {
@@ -153,6 +154,7 @@ async function createNodeOrThrow(
     parentNodeUid: result.parentNodeUid ?? 'unknown',
     isDirectory: result.isDirectory ?? false,
     contentSha1: result.contentSha1 ?? null,
+    revisionUid: result.revisionUid ?? null,
   };
 }
 
@@ -240,17 +242,18 @@ async function processJob(client: ProtonDriveClient, job: Job, dryRun: boolean):
       case SyncEventType.UPDATE: {
         const typeLabel = eventType === SyncEventType.CREATE_FILE ? 'Creating' : 'Updating';
         logger.info(`${typeLabel}: ${remotePath}`);
-        const { nodeUid, parentNodeUid, isDirectory, contentSha1 } = await createNodeOrThrow(
-          client,
-          localPath,
-          remotePath,
-          dryRun
-        );
+        const { nodeUid, parentNodeUid, isDirectory, contentSha1, revisionUid } =
+          await createNodeOrThrow(client, localPath, remotePath, dryRun);
         logger.info(`Success: ${remotePath} -> ${nodeUid}`);
-        await saveBaseSnapshot(localPath, contentSha1 ?? '', null, null);
+        // Record our own revision/sha1 as the new baseline so the remote watcher
+        // doesn't mistake the echo of this upload for a conflicting remote change.
+        await saveBaseSnapshot(localPath, contentSha1 ?? '', revisionUid, contentSha1);
         // Store node mapping and file state for future operations
         db.transaction((tx) => {
-          setNodeMapping(localPath, remotePath, nodeUid, parentNodeUid, isDirectory, dryRun, tx);
+          setNodeMapping(localPath, remotePath, nodeUid, parentNodeUid, isDirectory, dryRun, tx, {
+            revisionUid: revisionUid ?? undefined,
+            sha1: contentSha1 ?? undefined,
+          });
           if (job.changeToken) {
             storeFileState(localPath, job.changeToken, contentSha1, dryRun, tx);
           }

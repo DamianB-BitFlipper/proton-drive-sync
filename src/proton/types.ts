@@ -209,6 +209,7 @@ export interface CreateResult {
   error?: string;
   isDirectory: boolean;
   contentSha1: string | null;
+  revisionUid: string | null;
 }
 
 export interface DeleteOperationResult {
