@@ -37,6 +37,7 @@ import { dashboardCommand } from './cli/dashboard.js';
 import { reconcileCommand } from './cli/reconcile.js';
 import { setupCommand } from './cli/setup.js';
 import { conflictsCommand } from './cli/conflicts.js';
+import { resyncCommand } from './cli/resync.js';
 
 const { version } = (await import('../package.json')).default;
 
@@ -191,6 +192,13 @@ program
   .command('setup')
   .description('Interactive setup wizard for first-time configuration')
   .action(setupCommand);
+
+program
+  .command('resync <path>')
+  .description('Force a single file to resync, breaking a stuck sync loop')
+  .option('--local', 'Force the local version to win and re-upload it, clearing any stuck state')
+  .option('-y, --yes', 'Skip confirmation prompt')
+  .action(resyncCommand);
 
 program
   .command('conflicts')
