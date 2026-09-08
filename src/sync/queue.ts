@@ -300,65 +300,74 @@ export function getNextPendingJob(dryRun: boolean = false): Job | undefined {
   }
 
   // Transaction: select next PENDING job and mark as PROCESSING atomically
-  return db.transaction((tx) => {
-    const job = tx
-      .select({
-        id: schema.syncJobs.id,
-        eventType: schema.syncJobs.eventType,
-        localPath: schema.syncJobs.localPath,
-        remotePath: schema.syncJobs.remotePath,
-        status: schema.syncJobs.status,
-        nRetries: schema.syncJobs.nRetries,
-        retryAt: schema.syncJobs.retryAt,
-        lastError: schema.syncJobs.lastError,
-        createdAt: schema.syncJobs.createdAt,
-        changeToken: schema.syncJobs.changeToken,
-        oldLocalPath: schema.syncJobs.oldLocalPath,
-        oldRemotePath: schema.syncJobs.oldRemotePath,
-      })
-      .from(schema.syncJobs)
-      .leftJoin(
-        schema.processingQueue,
-        eq(schema.syncJobs.localPath, schema.processingQueue.localPath)
-      )
-      .where(
-        and(
-          eq(schema.syncJobs.status, SyncJobStatus.PENDING),
-          lte(schema.syncJobs.retryAt, now),
-          isNull(schema.processingQueue.localPath)
+  try {
+    return db.transaction((tx) => {
+      const job = tx
+        .select({
+          id: schema.syncJobs.id,
+          eventType: schema.syncJobs.eventType,
+          localPath: schema.syncJobs.localPath,
+          remotePath: schema.syncJobs.remotePath,
+          status: schema.syncJobs.status,
+          nRetries: schema.syncJobs.nRetries,
+          retryAt: schema.syncJobs.retryAt,
+          lastError: schema.syncJobs.lastError,
+          createdAt: schema.syncJobs.createdAt,
+          changeToken: schema.syncJobs.changeToken,
+          oldLocalPath: schema.syncJobs.oldLocalPath,
+          oldRemotePath: schema.syncJobs.oldRemotePath,
+        })
+        .from(schema.syncJobs)
+        .leftJoin(
+          schema.processingQueue,
+          eq(schema.syncJobs.localPath, schema.processingQueue.localPath)
         )
-      )
-      .orderBy(schema.syncJobs.retryAt)
-      .limit(1)
-      .get();
+        .where(
+          and(
+            eq(schema.syncJobs.status, SyncJobStatus.PENDING),
+            lte(schema.syncJobs.retryAt, now),
+            isNull(schema.processingQueue.localPath)
+          )
+        )
+        .orderBy(schema.syncJobs.retryAt)
+        .limit(1)
+        .get();
 
-    if (!job) return job;
+      if (!job) return job;
 
-    // Mark as PROCESSING and add to processing queue
-    tx.update(schema.syncJobs)
-      .set({ status: SyncJobStatus.PROCESSING })
-      .where(eq(schema.syncJobs.id, job.id))
-      .run();
-    tx.insert(schema.processingQueue)
-      .values({ localPath: job.localPath, startedAt: new Date() })
-      .onConflictDoUpdate({
-        target: schema.processingQueue.localPath,
-        set: { startedAt: new Date() },
-      })
-      .run();
+      // Mark as PROCESSING and add to processing queue
+      tx.update(schema.syncJobs)
+        .set({ status: SyncJobStatus.PROCESSING })
+        .where(eq(schema.syncJobs.id, job.id))
+        .run();
+      tx.insert(schema.processingQueue)
+        .values({ localPath: job.localPath, startedAt: new Date() })
+        .onConflictDoUpdate({
+          target: schema.processingQueue.localPath,
+          set: { startedAt: new Date() },
+        })
+        .run();
 
-    // Emit event for dashboard
-    jobEvents.emit('job', {
-      type: 'processing',
-      jobId: job.id,
-      localPath: job.localPath,
-      remotePath: job.remotePath,
-      timestamp: new Date(),
-      wasRetry: job.nRetries > 0,
-    } satisfies JobEvent);
+      // Emit event for dashboard
+      jobEvents.emit('job', {
+        type: 'processing',
+        jobId: job.id,
+        localPath: job.localPath,
+        remotePath: job.remotePath,
+        timestamp: new Date(),
+        wasRetry: job.nRetries > 0,
+      } satisfies JobEvent);
 
-    return job;
-  });
+      return job;
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.toLowerCase().includes('database is locked')) {
+      logger.debug('Database is busy while selecting a job; retrying on the next poll');
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -592,6 +601,7 @@ export function getJobCounts(): {
   processing: number;
   synced: number;
   blocked: number;
+  conflicts: number;
 } {
   const nowSeconds = Math.floor(Date.now() / 1000);
 
@@ -602,6 +612,7 @@ export function getJobCounts(): {
       processing: sql<number>`SUM(CASE WHEN ${schema.syncJobs.status} = ${SyncJobStatus.PROCESSING} THEN 1 ELSE 0 END)`,
       synced: sql<number>`SUM(CASE WHEN ${schema.syncJobs.status} = ${SyncJobStatus.SYNCED} THEN 1 ELSE 0 END)`,
       blocked: sql<number>`SUM(CASE WHEN ${schema.syncJobs.status} = ${SyncJobStatus.BLOCKED} THEN 1 ELSE 0 END)`,
+      conflicts: sql<number>`(SELECT COUNT(*) FROM conflicts WHERE status = 'OPEN')`,
     })
     .from(schema.syncJobs)
     .get();
@@ -616,6 +627,7 @@ export function getJobCounts(): {
     processing: result?.processing ?? 0,
     synced: result?.synced ?? 0,
     blocked: result?.blocked ?? 0,
+    conflicts: result?.conflicts ?? 0,
   };
 }
 

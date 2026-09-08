@@ -18,6 +18,9 @@ export interface NodeMappingInfo {
   nodeUid: string;
   parentNodeUid: string;
   isDirectory: boolean;
+  remoteRevisionUid: string | null;
+  remoteSha1: string | null;
+  remoteModifiedAt: Date | null;
 }
 
 // ============================================================================
@@ -43,6 +46,30 @@ export function getNodeMapping(
     nodeUid: result.nodeUid,
     parentNodeUid: result.parentNodeUid,
     isDirectory: result.isDirectory,
+    remoteRevisionUid: result.remoteRevisionUid,
+    remoteSha1: result.remoteSha1,
+    remoteModifiedAt: result.remoteModifiedAt,
+  };
+}
+
+/** Get a mapping by its Proton Drive node UID. */
+export function getNodeMappingByUid(nodeUid: string):
+  | (NodeMappingInfo & {
+      localPath: string;
+      remotePath: string;
+    })
+  | null {
+  const result = db.select().from(nodeMapping).where(eq(nodeMapping.nodeUid, nodeUid)).get();
+  if (!result) return null;
+  return {
+    localPath: result.localPath,
+    remotePath: result.remotePath,
+    nodeUid: result.nodeUid,
+    parentNodeUid: result.parentNodeUid,
+    isDirectory: result.isDirectory,
+    remoteRevisionUid: result.remoteRevisionUid,
+    remoteSha1: result.remoteSha1,
+    remoteModifiedAt: result.remoteModifiedAt,
   };
 }
 
@@ -56,9 +83,18 @@ export function setNodeMapping(
   parentNodeUid: string,
   isDirectory: boolean,
   dryRun: boolean,
-  tx: Tx
+  tx: Tx,
+  remoteMetadata?: { revisionUid?: string; sha1?: string; modifiedAt?: Date }
 ): void {
   if (dryRun) return;
+  const remoteFields = remoteMetadata
+    ? {
+        remoteRevisionUid: remoteMetadata.revisionUid ?? null,
+        remoteSha1: remoteMetadata.sha1 ?? null,
+        remoteModifiedAt: remoteMetadata.modifiedAt ?? null,
+      }
+    : {};
+
   tx.insert(nodeMapping)
     .values({
       localPath,
@@ -66,6 +102,7 @@ export function setNodeMapping(
       nodeUid,
       parentNodeUid,
       isDirectory,
+      ...remoteFields,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
@@ -74,6 +111,7 @@ export function setNodeMapping(
         nodeUid,
         parentNodeUid,
         isDirectory,
+        ...remoteFields,
         updatedAt: new Date(),
       },
     })

@@ -24,8 +24,13 @@ FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    git \
     jq \
+    libreoffice-writer \
+    libsecret-1-0 \
     libssl3 \
+    python3-uno \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy built binary from builder stage

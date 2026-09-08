@@ -31,6 +31,8 @@ export const SyncEventType = {
   CREATE_DIR: 'CREATE_DIR',
   UPDATE: 'UPDATE',
   DELETE: 'DELETE',
+  DOWNLOAD_FILE: 'DOWNLOAD_FILE',
+  MERGE_FILE: 'MERGE_FILE',
 } as const;
 
 export type SyncEventType = (typeof SyncEventType)[keyof typeof SyncEventType];
@@ -126,9 +128,54 @@ export const nodeMapping = sqliteTable(
     nodeUid: text('node_uid').notNull(),
     parentNodeUid: text('parent_node_uid').notNull(),
     isDirectory: integer('is_directory', { mode: 'boolean' }).notNull(),
+    remoteRevisionUid: text('remote_revision_uid'),
+    remoteSha1: text('remote_sha1'),
+    remoteModifiedAt: integer('remote_modified_at', { mode: 'timestamp' }),
     updatedAt: integer('updated_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
   },
   (table) => [primaryKey({ columns: [table.localPath, table.remotePath] })]
 );
+
+/** Files where local and remote content changed since their last common state. */
+export const conflicts = sqliteTable(
+  'conflicts',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    localPath: text('local_path').notNull(),
+    remotePath: text('remote_path').notNull(),
+    localSha1: text('local_sha1').notNull(),
+    remoteRevisionUid: text('remote_revision_uid'),
+    remoteSha1: text('remote_sha1'),
+    remoteDeleted: integer('remote_deleted', { mode: 'boolean' }).notNull().default(false),
+    conflictPath: text('conflict_path').notNull(),
+    status: text('status').notNull().default('OPEN'),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [index('idx_conflicts_status').on(table.status)]
+);
+
+/** Last common local snapshot used as the base for three-way merges. */
+export const baseSnapshots = sqliteTable('base_snapshots', {
+  localPath: text('local_path').primaryKey(),
+  snapshotPath: text('snapshot_path').notNull(),
+  localSha1: text('local_sha1').notNull(),
+  remoteRevisionUid: text('remote_revision_uid'),
+  remoteSha1: text('remote_sha1'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/** Persisted cursor for a Proton Drive tree event scope. */
+export const remoteEventState = sqliteTable('remote_event_state', {
+  syncDirPath: text('sync_dir_path').primaryKey(),
+  treeEventScopeId: text('tree_event_scope_id').notNull(),
+  lastEventId: text('last_event_id'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});

@@ -243,6 +243,7 @@ function renderStats(counts: {
   processing: number;
   synced: number;
   blocked: number;
+  conflicts: number;
 }): string {
   return Stats({ counts })!.toString();
 }
@@ -520,6 +521,15 @@ function renderSyncDirsHtml(dirs: Config['sync_dirs']): string {
               class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-proton"
             />
           </div>
+          <label class="col-span-2 flex items-center gap-3 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              ${dir.two_way ? 'checked' : ''}
+              onchange="updateSyncDir(${index}, 'two_way', this.checked); saveConfig()"
+              class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-proton focus:ring-proton"
+            />
+            <span>Enable two-way sync for this folder</span>
+          </label>
         </div>
         <button
           onclick="removeSyncDir(${index})"
@@ -621,7 +631,7 @@ let isDryRun = false;
 /** Get controls scripts with all values injected */
 function controlsScriptsWithValues(
   isOnboarding: boolean,
-  syncDirs: Array<{ source_path: string; remote_root?: string }>,
+  syncDirs: Array<{ source_path: string; remote_root?: string; two_way?: boolean }>,
   syncConcurrency: number
 ): string {
   const redirectUrl = isOnboarding ? '/about' : '';
@@ -998,6 +1008,10 @@ app.post('/api/config', async (c) => {
       ...defaultConfig,
       ...currentConfig,
       ...body,
+      sync_dirs: body.sync_dirs.map((dir: Config['sync_dirs'][number]) => ({
+        ...dir,
+        two_way: dir.two_way === true,
+      })),
     };
 
     // Validate
@@ -1072,7 +1086,11 @@ app.post('/api/add-directory', async (c) => {
     }
 
     // Add to config
-    const newDir = { source_path: sourcePath, remote_root: remoteRoot };
+    const newDir = {
+      source_path: sourcePath,
+      remote_root: remoteRoot,
+      two_way: formData.two_way === 'true',
+    };
     const newConfig: Config = {
       ...defaultConfig,
       ...currentConfig,

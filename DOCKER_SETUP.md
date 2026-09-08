@@ -72,6 +72,63 @@ Run Proton Drive Sync in Docker with support for Linux x86_64 and ARM64.
    - `/data/documents` → Your Proton Drive folder (e.g., `/Backup/Documents`)
    - `/data/photos` → Another Proton Drive folder (e.g., `/Backup/Photos`)
 
+## Isolated staging environment
+
+For manual testing without sharing configuration, credentials, state, or a
+dashboard port with an installed client, use the staging Compose file. This
+still connects to the real Proton Drive service, so configure it to use a
+dedicated remote test folder. Do not point it at a folder used by your normal
+installation.
+
+From the repository root (`proton-drive-sync`):
+
+```bash
+cp docker/.env.staging.example docker/.env.staging
+openssl rand -base64 32
+# Put the generated value in docker/.env.staging as KEYRING_PASSWORD
+mkdir -p .staging-sync
+docker compose -f docker/docker-compose.staging.yml --env-file docker/.env.staging up --build
+```
+
+The staging dashboard is available at http://localhost:4243. Authenticate in
+another terminal, including 2FA if required:
+
+```bash
+docker compose -f docker/docker-compose.staging.yml --env-file docker/.env.staging \
+   exec proton-drive-sync-staging proton-drive-sync auth
+```
+
+In the dashboard, add `/data/staging` and use a dedicated Proton Drive folder,
+for example `/proton-drive-sync-staging`. The host directory configured by
+`STAGING_SYNC_DIR` is always available inside the container as `/data/staging`.
+For example, to expose an existing host directory, set
+`STAGING_SYNC_DIR=/path/to/proton-drive-sync-staging` in `docker/.env.staging`,
+recreate the container, and add `/data/staging` in the dashboard. The staging instance uses separate
+Docker volumes named `proton-drive-sync-staging-config` and
+`proton-drive-sync-staging-state`; it does not read the installed client's
+configuration or database.
+
+Stop and remove the staging container with:
+
+```bash
+docker compose -f docker/docker-compose.staging.yml --env-file docker/.env.staging down
+```
+
+To delete the staging credentials and state as well:
+
+```bash
+docker compose -f docker/docker-compose.staging.yml --env-file docker/.env.staging down -v
+rm -rf .staging-sync
+```
+
+The final command removes only the local staging directory. Delete the
+dedicated remote test folder separately from Proton Drive when finished.
+
+The staging Compose file does not set container inotify sysctls because some
+Docker runtimes do not permit those settings in a separate kernel namespace.
+If the container later reports an inotify limit error, increase the limits on
+the Docker host using the troubleshooting commands below.
+
 ## Configuration
 
 ### Environment Variables

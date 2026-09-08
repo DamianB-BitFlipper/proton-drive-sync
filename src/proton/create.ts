@@ -140,7 +140,7 @@ async function uploadFile(
   localFilePath: string,
   fileName: string,
   fileStat: Stats
-): Promise<{ nodeUid: string; contentSha1: string | null }> {
+): Promise<{ nodeUid: string; contentSha1: string | null; revisionUid: string | null }> {
   const fileSize = Number(fileStat.size);
 
   // Check if file already exists in the target folder
@@ -179,7 +179,11 @@ async function uploadFile(
         if (localSha1 && localSha1.toLowerCase() === remoteSha1.toLowerCase()) {
           // SHA1 matches - files are identical, skip upload
           logger.info(`Skipping upload for ${fileName} - SHA1 digests match`);
-          return { nodeUid: existingFile.uid, contentSha1: localSha1 };
+          return {
+            nodeUid: existingFile.uid,
+            contentSha1: localSha1,
+            revisionUid: existingFile.activeRevision?.uid ?? null,
+          };
         }
 
         // SHA1 differs - content is different, always upload
@@ -203,13 +207,13 @@ async function uploadFile(
   }
 
   // Wait for completion
-  const { nodeUid } = await uploadController.completion();
+  const { nodeUid, nodeRevisionUid } = await uploadController.completion();
 
   // Compute SHA1 for local caching (skip if already computed during comparison)
   if (!localSha1) {
     localSha1 = await computeFileSha1(localFilePath);
   }
-  return { nodeUid, contentSha1: localSha1 };
+  return { nodeUid, contentSha1: localSha1, revisionUid: nodeRevisionUid };
 }
 
 // ============================================================================
@@ -262,6 +266,7 @@ export async function createNode(
       parentNodeUid: 'dry-run-parent-uid',
       isDirectory: false,
       contentSha1: null,
+      revisionUid: null,
     };
   }
   // Check if path exists locally
@@ -281,6 +286,7 @@ export async function createNode(
         error: `Local path not found: ${localPath}. For creating a new directory, add a trailing slash to remotePath.`,
         isDirectory: false,
         contentSha1: null,
+        revisionUid: null,
       };
     }
   }
@@ -296,6 +302,7 @@ export async function createNode(
       error: `Failed to get root folder: ${rootFolder.error}`,
       isDirectory,
       contentSha1: null,
+      revisionUid: null,
     };
   }
 
@@ -318,6 +325,7 @@ export async function createNode(
         parentNodeUid: targetFolderUid,
         isDirectory: true,
         contentSha1: null,
+        revisionUid: null,
       };
     } else {
       if (!pathStat) {
@@ -326,9 +334,10 @@ export async function createNode(
           error: `Cannot upload file: stat unavailable for ${localPath}`,
           isDirectory: false,
           contentSha1: null,
+          revisionUid: null,
         };
       }
-      const { nodeUid, contentSha1 } = await uploadFile(
+      const { nodeUid, contentSha1, revisionUid } = await uploadFile(
         client,
         targetFolderUid,
         localPath,
@@ -341,6 +350,7 @@ export async function createNode(
         parentNodeUid: targetFolderUid,
         isDirectory: false,
         contentSha1,
+        revisionUid,
       };
     }
   } catch (error) {
@@ -349,6 +359,7 @@ export async function createNode(
       error: (error as Error).message,
       isDirectory,
       contentSha1: null,
+      revisionUid: null,
     };
   }
 }

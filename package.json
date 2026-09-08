@@ -10,6 +10,7 @@
     "build": "tsc && cp -r src/db/migrations dist/db/ && mkdir -p dist/dashboard && cp src/dashboard/*.html dist/dashboard/ && cp -r src/dashboard/assets dist/dashboard/",
     "build:css": "bunx @tailwindcss/cli -i ./src/dashboard/styles/input.css -o ./src/dashboard/assets/styles.css --minify",
     "build:check": "tsc --noEmit",
+    "test": "bun test",
     "build:bin": "bun build --compile --minify --sourcemap ./src/index.ts --outfile ./dist/proton-drive-sync",
     "build:bin:darwin-arm64": "bun build --compile --minify --target=bun-darwin-arm64 ./src/index.ts --outfile ./dist/proton-drive-sync-darwin-arm64",
     "build:bin:darwin-x64": "bun build --compile --minify --target=bun-darwin-x64 ./src/index.ts --outfile ./dist/proton-drive-sync-darwin-x64",
@@ -33,7 +34,7 @@
   ],
   "dependencies": {
     "@inquirer/prompts": "^8.0.1",
-    "@protontech/drive-sdk": "^0.7.0",
+    "@protontech/drive-sdk": "0.21.0",
     "bcryptjs": "^3.0.3",
     "chokidar": "^5.0.0",
     "commander": "^14.0.2",

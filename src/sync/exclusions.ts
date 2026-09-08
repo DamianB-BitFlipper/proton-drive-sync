@@ -10,6 +10,48 @@ import { relative } from 'path';
 import type { ExcludePattern } from '../config.js';
 
 // ============================================================================
+// Always-Excluded Paths
+// ============================================================================
+
+/**
+ * Temp/working artifacts created by this app itself while downloading or
+ * merging files. These must never be synced regardless of user config, and
+ * may briefly appear inside a synced directory during processing.
+ */
+const INTERNAL_TEMP_PATTERNS: RegExp[] = [
+  /\.proton-download-.*\.tmp$/,
+  /\.proton-remote-.*\.tmp$/,
+  /\.proton-merged-.*\.tmp$/,
+  /(^|\/)\.odt-merge-[^/]*(\/|$)/, // legacy merge working dirs from older versions
+];
+
+/**
+ * Lock/autosave files created by common office suites on the *other* machine
+ * while a document is open. These are ephemeral, machine-local, and syncing
+ * them causes false conflicts (created/deleted rapidly, never meant to be
+ * shared). Excluded unconditionally, independent of user exclude_patterns.
+ */
+const THIRD_PARTY_LOCK_PATTERNS: RegExp[] = [
+  /(^|\/)\.~lock\..*#$/, // LibreOffice lock files, e.g. .~lock.report.odt#
+  /(^|\/)~\$.*$/, // Microsoft Office lock files, e.g. ~$report.docx
+];
+
+/**
+ * Check if a path is an internal sync artifact (our own temp files/dirs).
+ */
+export function isInternalTempPath(absolutePath: string): boolean {
+  return INTERNAL_TEMP_PATTERNS.some((pattern) => pattern.test(absolutePath));
+}
+
+/**
+ * Check if a path matches a well-known third-party lock/autosave file that
+ * should never be synced.
+ */
+function isThirdPartyLockFile(relativePath: string): boolean {
+  return THIRD_PARTY_LOCK_PATTERNS.some((pattern) => pattern.test(relativePath));
+}
+
+// ============================================================================
 // Glob to Regex Conversion
 // ============================================================================
 
@@ -116,14 +158,22 @@ export function isPathExcluded(
   syncDirPath: string,
   excludePatterns: ExcludePattern[]
 ): boolean {
-  if (!excludePatterns || excludePatterns.length === 0) {
-    return false;
+  if (isInternalTempPath(absolutePath)) {
+    return true;
   }
 
   // Compute relative path from sync dir
   const relativePath = relative(syncDirPath, absolutePath);
   if (!relativePath) {
     // Path is the sync dir itself, don't exclude
+    return false;
+  }
+
+  if (isThirdPartyLockFile(relativePath)) {
+    return true;
+  }
+
+  if (!excludePatterns || excludePatterns.length === 0) {
     return false;
   }
 

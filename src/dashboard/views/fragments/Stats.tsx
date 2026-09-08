@@ -4,7 +4,7 @@ import { Icon } from './Icon.js';
 
 export const Stats: FC<{ counts: JobCounts }> = ({ counts }) => {
   return (
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
       {/* Pending */}
       <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-sm hover:border-amber-500/50 transition-colors group relative overflow-hidden">
         <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -46,6 +46,17 @@ export const Stats: FC<{ counts: JobCounts }> = ({ counts }) => {
         <dt class="text-sm font-medium text-gray-400">Blocked</dt>
         <dd class="mt-2 text-3xl font-bold text-white group-hover:text-red-400 transition-colors">
           {counts.blocked}
+        </dd>
+      </div>
+
+      {/* Conflicts */}
+      <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-sm hover:border-orange-500/50 transition-colors group relative overflow-hidden">
+        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+          <Icon name="git-compare-arrows" class="w-12 h-12 text-orange-500" />
+        </div>
+        <dt class="text-sm font-medium text-gray-400">Conflicts</dt>
+        <dd class="mt-2 text-3xl font-bold text-white group-hover:text-orange-400 transition-colors">
+          {counts.conflicts}
         </dd>
       </div>
     </div>

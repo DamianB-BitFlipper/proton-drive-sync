@@ -51,6 +51,15 @@
               class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-proton"
             />
           </div>
+          <label class="col-span-2 flex items-center gap-3 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              ${dir.two_way ? 'checked' : ''}
+              onchange="updateSyncDir(${index}, 'two_way', this.checked); saveConfig()"
+              class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-proton focus:ring-proton"
+            />
+            <span>Enable two-way sync for this folder</span>
+          </label>
         </div>
         <button
           onclick="removeSyncDir(${index})"
@@ -102,6 +111,7 @@
       sync_dirs: validDirs.map((d) => ({
         source_path: d.source_path.trim(),
         remote_root: d.remote_root?.trim() || '',
+        two_way: d.two_way === true,
       })),
     };
 

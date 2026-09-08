@@ -61,6 +61,42 @@ export interface DeleteResult {
   error?: unknown;
 }
 
+export type RemoteEvent =
+  | {
+      type: 'node_created' | 'node_updated';
+      nodeUid: string;
+      parentNodeUid?: string;
+      isTrashed: boolean;
+      treeEventScopeId: string;
+      eventId: string;
+    }
+  | {
+      type: 'node_deleted';
+      nodeUid: string;
+      parentNodeUid?: string;
+      treeEventScopeId: string;
+      eventId: string;
+    }
+  | {
+      type: 'fast_forward' | 'tree_refresh' | 'tree_remove';
+      treeEventScopeId: string;
+      eventId: string;
+    };
+
+export interface FileDownloader {
+  getClaimedSizeInBytes(): number | undefined;
+  downloadToStream(
+    stream: WritableStream<Uint8Array>,
+    onProgress?: (downloadedBytes: number) => void
+  ): DownloadController;
+}
+
+export interface DownloadController {
+  pause(): void;
+  resume(): void;
+  completion(): Promise<void>;
+}
+
 // ============================================================================
 // Upload Types
 // ============================================================================
@@ -105,6 +141,13 @@ export interface UploadMetadata {
 export interface BaseProtonDriveClient {
   iterateFolderChildren(folderUid: string): AsyncIterable<NodeResult>;
   getMyFilesRootFolder(): Promise<RootFolderResult>;
+  getNode(nodeUid: string): Promise<NodeResult>;
+  iterateEvents(
+    treeEventScopeId: string,
+    lastEventId?: string,
+    signal?: AbortSignal
+  ): AsyncIterable<RemoteEvent>;
+  getFileDownloader(nodeUid: string): Promise<FileDownloader>;
 }
 
 /**
@@ -166,6 +209,7 @@ export interface CreateResult {
   error?: string;
   isDirectory: boolean;
   contentSha1: string | null;
+  revisionUid: string | null;
 }
 
 export interface DeleteOperationResult {

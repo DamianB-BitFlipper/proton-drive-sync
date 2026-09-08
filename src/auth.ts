@@ -637,8 +637,27 @@ async function apiRequest<T extends ApiResponse>(
     options.body = JSON.stringify(data);
   }
 
+  logger.debug(`API request: ${method} ${url}`);
+  logger.debug(`Request headers: ${JSON.stringify(options.headers)}`);
+  if (options.body) {
+    logger.debug(`Request body: ${options.body}`);
+  }
+
   const response = await fetch(url, options);
-  const json = (await response.json()) as T;
+  const responseText = await response.text();
+  let json: T;
+
+  try {
+    json = JSON.parse(responseText) as T;
+  } catch (parseError) {
+    const error = new Error(`Failed to parse API response: ${parseError}`) as ApiError;
+    error.status = response.status;
+    error.response = { Code: 0, Error: responseText } as ApiResponse;
+    throw error;
+  }
+
+  logger.debug(`API response status: ${response.status}`);
+  logger.debug(`API response body: ${JSON.stringify(json)}`);
 
   if (!response.ok || json.Code !== 1000) {
     const error = new Error(json.Error || `API error: ${response.status}`) as ApiError;
@@ -817,6 +836,12 @@ export class ProtonAuth {
     }
     if (response.RefreshToken) {
       this.session.RefreshToken = response.RefreshToken;
+    }
+
+    // If the server accepted 2FA but did not return new tokens, refresh now
+    if (!response.AccessToken && !response.RefreshToken && this.session.RefreshToken) {
+      logger.debug('2FA succeeded without new tokens; refreshing access token.');
+      await this.refreshToken();
     }
 
     // Check if this is a two-password mode account
@@ -1251,7 +1276,7 @@ interface HttpClientRequest {
   method: string;
   headers: Headers;
   json?: Record<string, unknown>;
-  body?: BodyInit;
+  body?: XMLHttpRequestBodyInit;
   timeoutMs: number;
   signal?: AbortSignal;
   onProgress?: (progress: number) => void;
@@ -1271,9 +1296,10 @@ interface OwnAddress {
 
 interface ProtonAccount {
   getOwnPrimaryAddress(): Promise<OwnAddress>;
+  getOwnAddresses(): Promise<OwnAddress[]>;
   getOwnAddress(emailOrAddressId: string): Promise<OwnAddress>;
   hasProtonAccount(email: string): Promise<boolean>;
-  getPublicKeys(email: string): Promise<openpgp.PublicKey[]>;
+  getPublicKeys(email: string, forceRefresh?: boolean): Promise<openpgp.PublicKey[]>;
 }
 
 interface SRPVerifier {
@@ -1293,6 +1319,7 @@ interface SRPModuleInterface {
   ): Promise<SrpResult>;
   getSrpVerifier(password: string): Promise<SRPVerifier>;
   computeKeyPassword(password: string, salt: string): Promise<string>;
+  generateKeySalt(): string;
 }
 
 /**
@@ -1450,6 +1477,26 @@ export function createProtonAccount(
       };
     },
 
+    async getOwnAddresses(): Promise<OwnAddress[]> {
+      const addresses = session.addresses ?? [];
+      if (addresses.length === 0) {
+        throw new Error('No addresses found');
+      }
+
+      return Promise.all(
+        addresses.map(async (address) => {
+          const primaryKeyIndex = address.keys.findIndex((k) => k.Primary === 1);
+          const keys = await decryptAddressKeys(address.keys);
+          return {
+            email: address.Email,
+            addressId: address.ID,
+            primaryKeyIndex: primaryKeyIndex >= 0 ? primaryKeyIndex : 0,
+            keys,
+          };
+        })
+      );
+    },
+
     async getOwnAddress(emailOrAddressId: string): Promise<OwnAddress> {
       const address = session.addresses?.find(
         (a) => a.Email === emailOrAddressId || a.ID === emailOrAddressId
@@ -1483,7 +1530,7 @@ export function createProtonAccount(
       }
     },
 
-    async getPublicKeys(email: string): Promise<openpgp.PublicKey[]> {
+    async getPublicKeys(email: string, _forceRefresh?: boolean): Promise<openpgp.PublicKey[]> {
       try {
         const response = await apiRequest<ApiResponse & { Keys?: { PublicKey: string }[] }>(
           'GET',
@@ -1514,6 +1561,10 @@ export function createProtonAccount(
  */
 export function createSrpModule(): SRPModuleInterface {
   return {
+    generateKeySalt(): string {
+      return base64Encode(crypto.getRandomValues(new Uint8Array(10)));
+    },
+
     async getSrp(
       version: number,
       modulus: string,
